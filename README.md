@@ -1,4 +1,4 @@
 EQLoc
 -----
 
-An automated Grid-Search based precedure to locate events using PPicker Code.
+An automated Grid-Search based precedure to locate (local) events using PPicker Code.
