@@ -1,0 +1,329 @@
+#!/bin/bash
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Config
+VM_Name="IRSC_Vel"			# Velocity model name
+initDP="10"					# Initial Depth in km
+CH_St="BH"					# Channel Stream ID
+PnPg_Th="185"				# Distance in km to declare between Pg and Pn
+Init_Grid_In="0.5"			# Initial Grid Intervals (deg)
+Radius="2.0"				# Search Radius (deg)
+
+LTA_P="30"					# LTA Window Length for P phase Picking
+STA_P="03"					# STA Window Length for P phase Picking
+P_WTh="3.0"					# STA/LTA Threshold for P phase picking
+Inc="01"					# Sliding Increament, Seconds
+WTh_I="0.2"					# STA/LTA Threshold Increament in Reprocessing
+Min_WTh_Th="2.0"			# Minimum acceptable WTh Threshold in Reprocessing
+Method="Class_LR"			# Sliding Method (Class_LR / Class_RR)
+
+#~~~~~~~~~~~~~~ Actual location of EQ
+EVELAT="28.25"
+EVELON="54.65"
+
+
+#  Class_RR:	<=====================> LTA
+#								<=====> STA	
+#  Class_LR:	<=====================> LTA
+#				  				    <=====> STA
+
+##### SAC Config
+F1_P=0.5					# Band-Pass Filter lower corner
+F2_P=8.0					# Band-Pass Filter upper corner
+
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ bODY sCript (Do not ChAnge)
+
+Home=`dirname $(readlink -f "$0")`
+input="$Home/Input"
+ttime="$Home/ttime.py"		
+VelModel="$Home/$VM_Name"	
+
+
+round ()
+{
+echo $(printf %.$2f $(echo "scale=$2;(((10^$2)*$1)+0.5)/(10^$2)" | bc))
+}
+
+deg2rad ()
+{
+	echo "scale=3; $1 * 0.01745329" | bc -l	
+}
+
+rad2deg ()
+{
+	echo "scale=3; $1 * 57.2957795" | bc -l 
+}
+
+time2sec ()
+{
+	date '+%s' --date="$1"
+}
+
+Absolute ()
+{
+	echo "scale=1; sqrt ($1 * $1)" | bc -l
+}	
+
+distance ()
+{
+	stlat=`deg2rad $1`
+	stlon=`deg2rad $2`
+	evela=`deg2rad $3`
+	evelo=`deg2rad $4`
+	lodif=`echo "$stlon - $evelo" | bc -l`
+	
+	DI=`echo "s ($evela) * s ($stlat) + c ($evela) * c ($stlat) * c ($lodif)" | bc -l`
+	aD=`echo "3.14159 / 2 - a ($DI / sqrt (1 - $DI * $DI ))" | bc -l` && deg_aD=`rad2deg $aD`
+	Dist=`echo "scale=2; $deg_aD * 60 * 1.15078 * 1.609344" | bc -l`
+	echo `round $Dist 2`
+}
+
+Data_Pre_Pro ()
+{
+	echo -e "r *"$CH_St"Z* \n rglitches \n rtr; rmean; taper \n bp c $F1_P $F2_P n 4 \n wh; w over \n q \n" | sac 2> /dev/null 1>&2
+}
+
+GET_RMS_P ()
+{
+	CMD="r $data \n MTW $1 $2; RMS TO USER0 \n MTW $3 $4; RMS TO USER1 \n setbb RL &1,USER0 RS &1,USER1 \n getbb TO .tmp NAMES off RL RS \n q \n"
+	echo -e "$CMD" | sac 2> /dev/null 1>&2
+}
+
+Cleaner ()
+{
+	[[ `ls $input/*SAC` ]] && SAC="SAC" || SAC="sac"
+	cd $input && ls -I "*$SAC" | xargs rm -f
+}
+
+P_Picker_Body ()
+{
+	bgtm=`saclst B f $data | awk '{print $2}'` && bgtm=`printf "%0.f\n" $bgtm`
+	entm=`saclst E f $data | awk '{print $2}'` && entm=`printf "%0.f\n" $entm`
+	evtm=`saclst KZTIME f $data | awk '{print $2}'` 
+	stnm=`saclst KSTNM f $data | awk '{print $2}'` 
+
+	L1="$bgtm"
+	L2=`echo "$L1 + $LTA_P" | bc -l`
+
+	while (( `echo "$L2 <= ($entm * 2 / 3)" | bc -l` )); do	
+		if [[ "$Method" = "Class_RR" ]]; then
+			S1=`echo "$L2 - $STA_P" | bc -l`
+			S2="$L2"
+		elif [[ "$Method" = "Class_LR" ]]; then
+			S1=`echo "$L2 - ($STA_P / 3)" | bc -l`
+			S2=`echo "$L2 + ($STA_P * 2 / 3)" | bc -l`	
+		else
+			echo "Please select a proper method" && exit
+		fi		
+		
+		GET_RMS_P $L1 $L2 $S1 $S2
+		
+		RMS_L=`awk 'NR==1 {print $0}' .tmp` 
+		RMS_S=`awk 'NR==2 {print $0}' .tmp` 
+		C=`echo "scale=1; ($RMS_S / $RMS_L) >= $P_WTh" | bc -l`
+		
+		if [[ "$C" = "1" ]]; then
+			echo -e "RMS_S = $RMS_S RMS_L = $RMS_L `echo "scale=1; $RMS_S / $RMS_L" | bc -l`"
+			PSec=`echo "scale=1; ($S1 + $S2) / 2" | bc -l` 
+			Ptme=`date --date "$evtm UTC +$PSec sec" "+%H:%M:%S"`
+			echo -e "r $data \n ch a $PSec \n wh \n w over \n q \n" | sac 2> /dev/null 1>&2
+			echo "$data $PSec $Ptme $stnm" >> P_Arrivals.dat && break
+		fi	
+		cat /dev/null > .tmp
+		L1=`echo "$L1 + $Inc" | bc -l`
+		L2=`echo "$L2 + $Inc" | bc -l`		
+	done
+}
+
+P_Picker ()
+{
+	cd $input
+	[[ ! `ls *"$CH_St"Z* 2> /dev/null` ]] && echo "No vertical component found in input dir" && exit
+	Data_Pre_Pro
+		
+	for data in `ls *"$CH_St"Z*`; do
+		echo -e "# Working on\n$data (Picking P phase)"
+		cat /dev/null > .tmp
+		P_Picker_Body
+	done
+
+	Or_WTh="$P_WTh"
+	for data in `ls *"$CH_St"Z*`; do
+		if [[ ! `grep $data P_Arrivals.dat 2> /dev/null` ]]; then
+			echo -e "# Reprocessing data:\n$data (Picking P phase)"
+			while [[ ! `grep $data P_Arrivals.dat 2> /dev/null` ]]; do
+				P_WTh=`echo "$P_WTh - $WTh_I" | bc -l` && (( `echo "$P_WTh < $Min_WTh_Th" | bc -l` )) && break
+				P_Picker_Body
+			done
+		fi
+		P_WTh="$Or_WTh"
+	done
+}
+
+grid ()
+{
+	cat /dev/null > Grids.dat
+	export Closest_Inf=`cat $input/P_Arrivals.dat | sort -k 3 | head -1`
+	export Closest_Sta=`echo $Closest_Inf | awk '{print $NF}'` 
+	export Closest_Tme=`echo $Closest_Inf | awk '{print $3}'`
+	export Closest_Tms=`time2sec $Closest_Tme`
+	export Closest_Lat=`grep -w "$Closest_Sta" $Home/stations.dat | awk '{print $2}'` 
+	export Closest_Lon=`grep -w "$Closest_Sta" $Home/stations.dat | awk '{print $3}'`
+	[[ -z "$Closest_Lat" ]] || [[ -z "$Closest_Lon" ]] && echo "No information found about $Closest_Sta station." && exit
+	
+	GrdMinLat=`echo "scale=0; $Closest_Lat - $Radius" | bc -l`
+	GrdMaxLat=`echo "scale=0; $Closest_Lat + $Radius" | bc -l`
+	GrdMinLon=`echo "scale=0; $Closest_Lon - $Radius" | bc -l`
+	GrdMaxLon=`echo "scale=0; $Closest_Lon + $Radius" | bc -l`
+	
+	for Glat in $(seq "$GrdMinLat" "$Init_Grid_In" "$GrdMaxLat"); do
+		for Glon in $(seq "$GrdMinLon" "$Init_Grid_In" "$GrdMaxLon"); do
+			echo "$Glat $Glon" >> Grids.dat
+		done	
+	done		
+}
+
+map ()
+{
+	GrdMinLon=`sort -n -k 2 $input/Grids.dat | head -1 | cut -f 2 -d " "`
+	GrdMaxLon=`sort -n -k 2 $input/Grids.dat | tail -1 | cut -f 2 -d " "`
+	GrdMinLat=`sort -n -k 1 $input/Grids.dat | head -1 | cut -f 1 -d " "`
+	GrdMaxLat=`sort -n -k 1 $input/Grids.dat | tail -1 | cut -f 1 -d " "`
+	StaMinLon=`sort -n -k 3 $input/stations.used | head -1 | cut -f 3 -d " "`
+	StaMaxLon=`sort -n -k 3 $input/stations.used | tail -1 | cut -f 3 -d " "`
+	StaMinLat=`sort -n -k 2 $input/stations.used | head -1 | cut -f 2 -d " "`
+	StaMaxLat=`sort -n -k 2 $input/stations.used | tail -1 | cut -f 2 -d " "`
+	(( `echo "$GrdMinLon <= $StaMinLon" | bc -l` ))	&& MapMinLon="$GrdMinLon" || MapMinLon="$StaMinLon"
+	(( `echo "$GrdMaxLon >= $StaMaxLon" | bc -l` ))	&& MapMaxLon="$GrdMaxLon" || MapMaxLon="$StaMaxLon"
+	(( `echo "$GrdMinLat <= $StaMinLat" | bc -l` ))	&& MapMinLat="$GrdMinLat" || MapMinLat="$StaMinLat"
+	(( `echo "$GrdMaxLat >= $StaMaxLat" | bc -l` ))	&& MapMaxLat="$GrdMaxLat" || MapMaxLat="$StaMaxLat"	
+	
+	Lo1=`echo "$MapMinLon - 0.5" | bc -l`
+	Lo2=`echo "$MapMaxLon + 0.5" | bc -l`
+	La1=`echo "$MapMinLat - 0.5" | bc -l`
+	La2=`echo "$MapMaxLat + 0.5" | bc -l`
+	
+	gmt pscoast -R$Lo1/$Lo2/$La1/$La2 -JM4.5i -Sgray -Xc -Yc -Gwhite -Ba -BWSen -K > Map.ps
+	gmt psxy -R -J Grids.dat -Sc0.08c -Gblue -i1,0 -K -O >> Map.ps
+	echo "$EVELON $EVELAT" | gmt psxy -R -J -Sa0.25 -Gred -i0,1 -K -O >> Map.ps
+	gmt psxy -R -J stations.used -St0.25c -Gblack -i2,1 -K -O >> Map.ps
+	cat Epicenter.dat | gmt psxy -R -J -Sc0.25 -Gred -i1,0 -K -O >> Map.ps
+}
+
+vel_Reader ()
+{
+	cat /dev/null > $Home/Velmodel.tvel
+	sed -i '/^$/d' $VelModel
+	read -a DP <<< `awk 'NR > 1 {print $1}' $VelModel`
+	read -a VP <<< `awk 'NR > 1 {print $2}' $VelModel`
+	read -a VS <<< `awk 'NR > 1 {print $3}' $VelModel`
+	read -a DN <<< `awk 'NR > 1 {print $4}' $VelModel`
+	
+	echo -e "# Header Line\n# Header Line\n${DP[0]}  ${VP[0]}   ${VS[0]}   ${DN[0]}" > $Home/Velmodel.tvel
+	for ((i=1; i<${#DP[@]}; i++)); do
+		[[ -z ${DP[$i]} ]] || [[ -z ${VP[$i]} ]] || [[ -z ${VS[$i]} ]] && echo "Incomplete Velocity model!" && exit
+		echo "${DP[$i]}  ${VP[$((i-1))]}   ${VS[$((i-1))]}   ${DN[$((i-1))]}" >> $Home/Velmodel.tvel
+		echo "${DP[$i]}  ${VP[$i]}   ${VS[$i]}   ${DN[$i]}" >> $Home/Velmodel.tvel
+	done
+}
+
+arrival_diffs ()
+{
+	cat $input/P_Arrivals.dat | while read info; do
+		stname=`echo $info | awk '{print $NF}'`
+		[[ "$stname" = "$Closest_Sta" ]] && continue
+		sttime=`echo $info | awk '{print $3}'`
+		sttimeS=`time2sec $sttime`
+		diff=`echo "$sttimeS - $Closest_Tms" | bc -l`
+		echo "$Closest_Sta $stname $diff"
+	done > real_tdiffs.dat	
+}
+
+RMS_Cal ()
+{
+	Sum=0
+	num=`cat synt_tdiffs.dat | wc -l`
+	while read info; do
+		sta=`echo $info | cut -f 2 -d " "`
+		tds=`echo $info | cut -f 3 -d " "`
+		tdr=`grep -w "$sta" real_tdiffs.dat	| cut -f 3 -d " "`
+		sum=`echo "($tds - $tdr) ^ 2" | bc -l`
+		Sum=`echo "$Sum + $sum" | bc -l`
+	done <<< $(cat synt_tdiffs.dat)
+									# We fed the loop like this to avoid using a pipe.
+									# Doing this, it is possible to get the $Sum value 
+									# outside of the loop which is running within a subshell.
+									
+	RMS=`echo "sacle=2; sqrt ($Sum) / $num" | bc -l`
+	echo "$Glat $Glon $RMS" >> RMS.dat
+}
+
+TT_Calculator ()
+{
+	cat $input/P_Arrivals.dat | while read info; do
+		stnm=`echo $info | awk '{print $NF}'`
+		stla=`grep -w "$stnm" $Home/stations.dat | awk '{print $2}'`
+		stlo=`grep -w "$stnm" $Home/stations.dat | awk '{print $3}'`
+		[[ -z "$stla" ]] || [[ -z "$stlo" ]] && continue
+		echo "$stnm $stla $stlo"
+	done > stations.used	
+	
+	sed -i "/model =/c\model = cake.load_model(\'$Home/Velmodel.tvel\')" $ttime
+	sed -i "/source_depth =/c\source_depth = $initDP * km" $ttime		
+	
+	stlat="$Closest_Lat"
+	stlon="$Closest_Lon"
+	stnme="$Closest_Sta"
+	
+	cat Grids.dat | while read Ginfo; do
+		cat /dev/null > traveltimes.dat
+		Glat=`echo $Ginfo | awk '{print $1}'` && evela="$Glat"
+		Glon=`echo $Ginfo | awk '{print $2}'` && evelo="$Glon"
+		echo "Processing Grid point << Lat $Glat  Lon $Glon >>"
+		cat /dev/null > $Glon-$Glat.dat
+
+		mindist=`distance $stlat $stlon $evela $evelo`
+		echo "minsidt = $mindist" >> $Glon-$Glat.dat
+		
+		cat stations.used | while read Sinfo; do
+			stnam=`echo $Sinfo | awk '{print $1}'`	
+			stlat=`echo $Sinfo | awk '{print $2}'` 
+			stlon=`echo $Sinfo | awk '{print $3}'` 
+			dist=`distance $stlat $stlon $evela $evelo` 
+			echo "$stnam $dist" >> $Glon-$Glat.dat
+			
+			if (( `echo "$dist < $mindist" | bc -l` )); then
+				echo "Ignoring Grid point ..." && cat /dev/null > traveltimes.dat
+				sed -i "/$Glat $Glon/d" $input/Grids.dat && echo "Dead" >> $Glon-$Glat.dat && break 1
+			fi	
+			
+			(( `echo "$dist < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
+			sed -i "/distances = /c\distances = num.linspace($dist,$dist,1)*km * cake.m2d" $ttime 
+			sed -i "/Phase =/c\Phase = cake.PhaseDef(\'$phase\')" $ttime
+			TT=`python $ttime 2> /dev/null` && TTm=`echo $TT | awk '{print $6}'`
+			[[ -z "$TTm" ]] && continue
+			echo "$stnam $TTm" >> traveltimes.dat
+		done 
+		[[ ! -s traveltimes.dat ]] && continue
+		
+		closest_st_ttime=`grep -w "$stnme" traveltimes.dat | cut -f 2 -d " "`
+		cat traveltimes.dat | while read info; do
+			stname=`echo $info | awk '{print $1}'`
+			[[ "$stname" = "$stnme" ]] && continue
+			sttime=`echo $info | awk '{print $2}'`
+			diff=`echo "$sttime - $closest_st_ttime" | bc -l`
+			echo "$stnme $stname $diff"
+		done > synt_tdiffs.dat			
+		RMS_Cal
+	done	
+	sort -n -k 3 RMS.dat | head -1 > Epicenter.dat
+}
+
+Cleaner
+P_Picker
+grid
+vel_Reader
+arrival_diffs
+TT_Calculator
+map
