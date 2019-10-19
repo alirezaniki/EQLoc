@@ -5,9 +5,11 @@ VM_Name="IRSC_Vel"			# Velocity model name
 initDP="10"					# Initial Depth in km
 CH_St="BH"					# Channel Stream ID
 PnPg_Th="185"				# Distance in km to declare between Pg and Pn
-Init_Grid_In="0.5"			# Initial Grid Intervals (deg)
+Init_Grid_In="2.0"			# Initial Grid Intervals (deg)
 Radius="2.0"				# Search Radius (deg)
-
+N_Iter="2"					# Number of grid search Iterations over the best 
+							# grid point to maximize the location accuracy.
+							
 LTA_P="30"					# LTA Window Length for P phase Picking
 STA_P="03"					# STA Window Length for P phase Picking
 P_WTh="3.0"					# STA/LTA Threshold for P phase picking
@@ -16,9 +18,9 @@ WTh_I="0.2"					# STA/LTA Threshold Increament in Reprocessing
 Min_WTh_Th="2.0"			# Minimum acceptable WTh Threshold in Reprocessing
 Method="Class_LR"			# Sliding Method (Class_LR / Class_RR)
 
-#~~~~~~~~~~~~~~ Actual location of EQ
-EVELAT="28.25"
-EVELON="54.65"
+#~~~~~~~~~~~~~~ Actual location of EQ (Only for GMT plot)
+EVELAT="31.98"
+EVELON="49.79"
 
 
 #  Class_RR:	<=====================> LTA
@@ -164,24 +166,17 @@ P_Picker ()
 grid ()
 {
 	cat /dev/null > Grids.dat
-	export Closest_Inf=`cat $input/P_Arrivals.dat | sort -k 3 | head -1`
-	export Closest_Sta=`echo $Closest_Inf | awk '{print $NF}'` 
-	export Closest_Tme=`echo $Closest_Inf | awk '{print $3}'`
-	export Closest_Tms=`time2sec $Closest_Tme`
-	export Closest_Lat=`grep -w "$Closest_Sta" $Home/stations.dat | awk '{print $2}'` 
-	export Closest_Lon=`grep -w "$Closest_Sta" $Home/stations.dat | awk '{print $3}'`
-	[[ -z "$Closest_Lat" ]] || [[ -z "$Closest_Lon" ]] && echo "No information found about $Closest_Sta station." && exit
-	
-	GrdMinLat=`echo "scale=0; $Closest_Lat - $Radius" | bc -l`
-	GrdMaxLat=`echo "scale=0; $Closest_Lat + $Radius" | bc -l`
-	GrdMinLon=`echo "scale=0; $Closest_Lon - $Radius" | bc -l`
-	GrdMaxLon=`echo "scale=0; $Closest_Lon + $Radius" | bc -l`
+	GrdMinLat=`echo "scale=0; $Nearest_Lat - $Radius" | bc -l`
+	GrdMaxLat=`echo "scale=0; $Nearest_Lat + $Radius" | bc -l`
+	GrdMinLon=`echo "scale=0; $Nearest_Lon - $Radius" | bc -l`
+	GrdMaxLon=`echo "scale=0; $Nearest_Lon + $Radius" | bc -l`
 	
 	for Glat in $(seq "$GrdMinLat" "$Init_Grid_In" "$GrdMaxLat"); do
 		for Glon in $(seq "$GrdMinLon" "$Init_Grid_In" "$GrdMaxLon"); do
 			echo "$Glat $Glon" >> Grids.dat
 		done	
-	done		
+	done	
+	cat Grids.dat >> All_Grds.dat
 }
 
 map ()
@@ -204,11 +199,16 @@ map ()
 	La1=`echo "$MapMinLat - 0.5" | bc -l`
 	La2=`echo "$MapMaxLat + 0.5" | bc -l`
 	
-	gmt pscoast -R$Lo1/$Lo2/$La1/$La2 -JM4.5i -Sgray -Xc -Yc -Gwhite -Ba -BWSen -K > Map.ps
-	gmt psxy -R -J Grids.dat -Sc0.08c -Gblue -i1,0 -K -O >> Map.ps
+	gmt pscoast -R$Lo1/$Lo2/$La1/$La2 -JM4i -Sgray -Xc -Yc -Gwhite -Ba -BWSen -K > Map.ps
+	gmt psxy -R -J All_Grds.dat -Sc0.08c -Gblack -i1,0 -K -O >> Map.ps
 	echo "$EVELON $EVELAT" | gmt psxy -R -J -Sa0.25 -Gred -i0,1 -K -O >> Map.ps
 	gmt psxy -R -J stations.used -St0.25c -Gblack -i2,1 -K -O >> Map.ps
 	cat Epicenter.dat | gmt psxy -R -J -Sc0.25 -Gred -i1,0 -K -O >> Map.ps
+}
+
+Regression ()
+{
+	awk '{print $4,$3}' $1 | gmt regress -Fp -o5
 }
 
 vel_Reader ()
@@ -230,33 +230,78 @@ vel_Reader ()
 
 arrival_diffs ()
 {
+	export Closest_Inf=`sort -n -k 2 $input/P_Arrivals.dat | head -1`
+	export Closest_Sta=`echo $Closest_Inf | awk '{print $NF}'`
+	export Closest_Tme=`echo $Closest_Inf | awk '{print $2}'`
+	export Closest_Lat=`grep -w "$Closest_Sta" $Home/stations.dat | awk '{print $2}'`
+	export Closest_Lon=`grep -w "$Closest_Sta" $Home/stations.dat | awk '{print $3}'`
+	[[ -z "$Closest_Lat" ]] || [[ -z "$Closest_Lon" ]] && echo "No information found for The closest station!" && exit
+	
 	cat $input/P_Arrivals.dat | while read info; do
-		stname=`echo $info | awk '{print $NF}'`
+		stname=`echo $info | awk '{print $NF}'`	
 		[[ "$stname" = "$Closest_Sta" ]] && continue
-		sttime=`echo $info | awk '{print $3}'`
-		sttimeS=`time2sec $sttime`
-		diff=`echo "$sttimeS - $Closest_Tms" | bc -l`
-		echo "$Closest_Sta $stname $diff"
-	done > real_tdiffs.dat	
+		stlat=`grep -w "$stname" $Home/stations.dat | awk '{print $2}'`
+		stlon=`grep -w "$stname" $Home/stations.dat | awk '{print $3}'`	
+		[[ -z "$stlat" ]] || [[ -z "$stlon" ]] && continue
+		dist=`distance $stlat $stlon $Closest_Lat $Closest_Lon`		
+		sttime=`echo $info | awk '{print $2}'`
+		Tdiff=`echo "$sttime - $Closest_Tme" | bc -l`
+		echo "$Closest_Sta $stname $dist $Tdiff"
+	done > dist_time.dat
+	export Real_Slope=`Regression dist_time.dat`
 }
 
-RMS_Cal ()
+Grid_Search ()
 {
-	Sum=0
-	num=`cat synt_tdiffs.dat | wc -l`
-	while read info; do
-		sta=`echo $info | cut -f 2 -d " "`
-		tds=`echo $info | cut -f 3 -d " "`
-		tdr=`grep -w "$sta" real_tdiffs.dat	| cut -f 3 -d " "`
-		sum=`echo "($tds - $tdr) ^ 2" | bc -l`
-		Sum=`echo "$Sum + $sum" | bc -l`
-	done <<< $(cat synt_tdiffs.dat)
-									# We fed the loop like this to avoid using a pipe.
-									# Doing this, it is possible to get the $Sum value 
-									# outside of the loop which is running within a subshell.
-									
-	RMS=`echo "sacle=2; sqrt ($Sum) / $num" | bc -l`
-	echo "$Glat $Glon $RMS" >> RMS.dat
+	cat Grids.dat | while read Ginfo; do
+		cat /dev/null > traveltimes.dat
+		Glat=`echo $Ginfo | awk '{print $1}'` && evela="$Glat"
+		Glon=`echo $Ginfo | awk '{print $2}'` && evelo="$Glon"
+		echo "Processing Grid point << Lat $Glat Lon $Glon >>"
+		cat /dev/null > $Glon-$Glat.dat
+
+		mindist=`distance $stlat $stlon $evela $evelo`
+		
+		cat stations.used | while read Sinfo; do
+			stnam=`echo $Sinfo | awk '{print $1}'`	
+			stlat=`echo $Sinfo | awk '{print $2}'` 
+			stlon=`echo $Sinfo | awk '{print $3}'` 
+			dist=`distance $stlat $stlon $evela $evelo` 
+			echo "distance to $stnam = $dist km" >> $Glon-$Glat.dat
+			
+			if (( `echo "$dist < $mindist" | bc -l` )); then
+				echo "Ignoring Grid point ..." && cat /dev/null > traveltimes.dat
+				sed -i "/$Glat $Glon/d" $input/Grids.dat && echo "Process Killed ..." >> $Glon-$Glat.dat && break 1
+			fi	
+			
+			(( `echo "$dist < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
+			sed -i "/distances = /c\distances = num.linspace($dist,$dist,1)*km * cake.m2d" $ttime 
+			sed -i "/Phase =/c\Phase = cake.PhaseDef(\'$phase\')" $ttime
+			TT=`python $ttime 2> /dev/null` && TTm=`echo $TT | awk '{print $6}'`
+			[[ -z "$TTm" ]] && continue
+			echo -e "Travel time to $stnam = $TTm \n" >> $Glon-$Glat.dat
+			echo "$stnam $TTm" >> traveltimes.dat
+		done 
+		
+		[[ ! -s traveltimes.dat ]] && echo "No synthetic travel times calculated for this grid point, ignoring ..." >> $Glon-$Glat.dat && continue
+		closest_st_ttime=`grep -w "$stnme" traveltimes.dat | cut -f 2 -d " "`
+		[[ -z "$closest_st_ttime" ]] && echo "Program does not able to calculate synthetic T-time for the nearest station!" && exit
+		
+		cat traveltimes.dat | while read info; do
+			stname=`echo $info | awk '{print $1}'`
+			[[ "$stname" = "$stnme" ]] && continue
+			sttime=`echo $info | awk '{print $2}'`
+			diff=`echo "$sttime - $closest_st_ttime" | bc -l`
+			dist=`grep -w "$stname" $input/dist_time.dat | cut -f 3 -d " "`
+			echo "$stnme $stname $dist $diff"
+		done > synt_tdiffs.dat	
+			
+		Syn_Slope=`Regression synt_tdiffs.dat`
+		Slope_Diff=`echo "scale=3; $Syn_Slope - $Real_Slope" | bc -l` && Slope_Diff=`Absolute $Slope_Diff`
+		echo "Regression Slope = $Slope_Diff" >> $Glon-$Glat.dat
+		echo "$Glat $Glon $Slope_Diff" >> RMS.dat
+	done	
+	sort -n -k 3 RMS.dat | head -1 > Epicenter.dat	
 }
 
 TT_Calculator ()
@@ -272,57 +317,30 @@ TT_Calculator ()
 	sed -i "/model =/c\model = cake.load_model(\'$Home/Velmodel.tvel\')" $ttime
 	sed -i "/source_depth =/c\source_depth = $initDP * km" $ttime		
 	
+	Nearest_Lat="$Closest_Lat"
+	Nearest_Lon="$Closest_Lon"			
+	grid
+	
 	stlat="$Closest_Lat"
 	stlon="$Closest_Lon"
-	stnme="$Closest_Sta"
+	stnme="$Closest_Sta"	
+	Grid_Search
 	
-	cat Grids.dat | while read Ginfo; do
-		cat /dev/null > traveltimes.dat
-		Glat=`echo $Ginfo | awk '{print $1}'` && evela="$Glat"
-		Glon=`echo $Ginfo | awk '{print $2}'` && evelo="$Glon"
-		echo "Processing Grid point << Lat $Glat  Lon $Glon >>"
-		cat /dev/null > $Glon-$Glat.dat
-
-		mindist=`distance $stlat $stlon $evela $evelo`
-		echo "minsidt = $mindist" >> $Glon-$Glat.dat
-		
-		cat stations.used | while read Sinfo; do
-			stnam=`echo $Sinfo | awk '{print $1}'`	
-			stlat=`echo $Sinfo | awk '{print $2}'` 
-			stlon=`echo $Sinfo | awk '{print $3}'` 
-			dist=`distance $stlat $stlon $evela $evelo` 
-			echo "$stnam $dist" >> $Glon-$Glat.dat
-			
-			if (( `echo "$dist < $mindist" | bc -l` )); then
-				echo "Ignoring Grid point ..." && cat /dev/null > traveltimes.dat
-				sed -i "/$Glat $Glon/d" $input/Grids.dat && echo "Dead" >> $Glon-$Glat.dat && break 1
-			fi	
-			
-			(( `echo "$dist < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
-			sed -i "/distances = /c\distances = num.linspace($dist,$dist,1)*km * cake.m2d" $ttime 
-			sed -i "/Phase =/c\Phase = cake.PhaseDef(\'$phase\')" $ttime
-			TT=`python $ttime 2> /dev/null` && TTm=`echo $TT | awk '{print $6}'`
-			[[ -z "$TTm" ]] && continue
-			echo "$stnam $TTm" >> traveltimes.dat
-		done 
-		[[ ! -s traveltimes.dat ]] && continue
-		
-		closest_st_ttime=`grep -w "$stnme" traveltimes.dat | cut -f 2 -d " "`
-		cat traveltimes.dat | while read info; do
-			stname=`echo $info | awk '{print $1}'`
-			[[ "$stname" = "$stnme" ]] && continue
-			sttime=`echo $info | awk '{print $2}'`
-			diff=`echo "$sttime - $closest_st_ttime" | bc -l`
-			echo "$stnme $stname $diff"
-		done > synt_tdiffs.dat			
-		RMS_Cal
+	N_Iter=${N_Iter%.*}
+	while [[ "$N_Iter" -gt "0" ]]; do
+		cat /dev/null > RMS.dat
+		Nearest_Lat=`cut -f 1 -d " " Epicenter.dat`
+		Nearest_Lon=`cut -f 2 -d " " Epicenter.dat`
+		Radius=`echo "scale=1; $Radius / 2" | bc -l`
+		Init_Grid_In=`echo "scale=1; $Init_Grid_In / 2" | bc -l`
+		grid 
+		Grid_Search
+		N_Iter=$((N_Iter - 1))
 	done	
-	sort -n -k 3 RMS.dat | head -1 > Epicenter.dat
 }
 
 Cleaner
 P_Picker
-grid
 vel_Reader
 arrival_diffs
 TT_Calculator
