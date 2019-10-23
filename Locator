@@ -1,36 +1,36 @@
 #!/bin/bash
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Config
-AutoPick="False"				# Either to use Auto_Pick procedure or not (True/False)
+AutoPick="False"			# Either to use Auto_Pick procedure or not (True/False)
 VM_Name="IRSC_Vel"			# Velocity model name
-initDP="18"							# Initial Depth in km
-CH_St="BH"							# Channel Stream ID
-PnPg_Th="185"						# Distance in km to declare between Pg and Pn
+initDP="18"					# Initial Depth in km
+CH_St="BH"					# Channel Stream ID
+PnPg_Th="185"				# Distance in km to declare between Pg and Pn
 Init_Grid_In="1.0"			# Initial Grid Intervals (deg)
-Radius="2.0"						# Search Radius (deg)
-N_Iter="2"							# Number of grid search Iterations over the best 
-												# grid point to maximize the location accuracy.
+Radius="2.0"				# Search Radius (deg)
+N_Iter="2"					# Number of grid search Iterations over the best 
+							# grid point to maximize the location accuracy.
 							
 LTA_P="30"					# LTA Window Length for P phase Picking
 STA_P="03"					# STA Window Length for P phase Picking
 P_WTh="10"					# STA/LTA Threshold for P phase picking
-Inc="01"						# Sliding Increament, Seconds
+Inc="01"					# Sliding Increament, Seconds
 WTh_I="0.5"					# STA/LTA Threshold Increament in Reprocessing
-Min_WTh_Th="2.0"		# Minimum acceptable WTh Threshold in Reprocessing
-Method="Class_LR"		# Sliding Method (Class_LR / Class_RR)
+Min_WTh_Th="2.0"			# Minimum acceptable WTh Threshold in Reprocessing
+Method="Class_LR"			# Sliding Method (Class_LR / Class_RR)
 
 #~~~~~~~~~~~~~~ Actual location of EQ (Only for GMT plot)
 EVELAT="27.07"
 EVELON="54.99"
 ##### SAC Config
-F1_P=0.8						# Band-Pass Filter lower corner
-F2_P=5.0						# Band-Pass Filter upper corner
+F1_P=0.8					# Band-Pass Filter lower corner
+F2_P=5.0					# Band-Pass Filter upper corner
 
 
 #  Class_RR:	<=====================> LTA
-#															<=====> STA	
+#								<=====> STA	
 #  Class_LR:	<=====================> LTA
-#				  				 							  <=====> STA
+#				  				   <=====> STA
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ bODY sCript (Do not ChAnge)
 
