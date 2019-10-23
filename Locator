@@ -1,38 +1,36 @@
 #!/bin/bash
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Config
+AutoPick="False"				# Either to use Auto_Pick procedure or not (True/False)
 VM_Name="IRSC_Vel"			# Velocity model name
-initDP="10"				# Initial Depth in km
-CH_St="BH"				# Channel Stream ID
-PnPg_Th="185"				# Distance in km to declare between Pg and Pn
-Init_Grid_In="2.0"			# Initial Grid Intervals (deg)
-Radius="2.0"				# Search Radius (deg)
-N_Iter="2"				# Number of grid search Iterations over the best 
-					# grid point to maximize the location accuracy.
+initDP="18"							# Initial Depth in km
+CH_St="BH"							# Channel Stream ID
+PnPg_Th="185"						# Distance in km to declare between Pg and Pn
+Init_Grid_In="1.0"			# Initial Grid Intervals (deg)
+Radius="2.0"						# Search Radius (deg)
+N_Iter="2"							# Number of grid search Iterations over the best 
+												# grid point to maximize the location accuracy.
 							
-LTA_P="30"				# LTA Window Length for P phase Picking
-STA_P="03"				# STA Window Length for P phase Picking
-P_WTh="3.0"				# STA/LTA Threshold for P phase picking
-Inc="01"				# Sliding Increament, Seconds
-WTh_I="0.2"				# STA/LTA Threshold Increament in Reprocessing
-Min_WTh_Th="2.0"			# Minimum acceptable WTh Threshold in Reprocessing
-Method="Class_LR"			# Sliding Method (Class_LR / Class_RR)
+LTA_P="30"					# LTA Window Length for P phase Picking
+STA_P="03"					# STA Window Length for P phase Picking
+P_WTh="10"					# STA/LTA Threshold for P phase picking
+Inc="01"						# Sliding Increament, Seconds
+WTh_I="0.5"					# STA/LTA Threshold Increament in Reprocessing
+Min_WTh_Th="2.0"		# Minimum acceptable WTh Threshold in Reprocessing
+Method="Class_LR"		# Sliding Method (Class_LR / Class_RR)
 
 #~~~~~~~~~~~~~~ Actual location of EQ (Only for GMT plot)
-EVELAT="31.98"
-EVELON="49.79"
+EVELAT="27.07"
+EVELON="54.99"
+##### SAC Config
+F1_P=0.8						# Band-Pass Filter lower corner
+F2_P=5.0						# Band-Pass Filter upper corner
 
 
 #  Class_RR:	<=====================> LTA
-#				<=====> STA	
+#															<=====> STA	
 #  Class_LR:	<=====================> LTA
-#				   <=====> STA
-
-##### SAC Config
-F1_P=0.5					# Band-Pass Filter lower corner
-F2_P=8.0					# Band-Pass Filter upper corner
-
-
+#				  				 							  <=====> STA
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ bODY sCript (Do not ChAnge)
 
@@ -340,7 +338,20 @@ TT_Calculator ()
 }
 
 Cleaner
-P_Picker
+if [[ "$AutoPick" = "True" ]] || [[ "$AutoPick" = "true" ]]; then
+	P_Picker
+else
+	cd $input
+	[[ ! `ls *"$CH_St"Z* 2> /dev/null` ]] && echo "No vertical component found in input dir" && exit
+	for data in `ls *"$CH_St"Z*`; do
+		PSec=`saclst A f $data | awk '{print $2}'` 
+		(( `echo "$PSec == -12345" | bc -l` )) && continue
+		evtm=`saclst KZTIME f $data | awk '{print $2}'` 
+		stnm=`saclst KSTNM f $data | awk '{print $2}'` 		
+		Ptme=`date --date "$evtm UTC +$PSec sec" "+%H:%M:%S"`
+		echo "$data $PSec $Ptme $stnm" >> P_Arrivals.dat
+	done
+fi		
 vel_Reader
 arrival_diffs
 TT_Calculator
