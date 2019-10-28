@@ -22,6 +22,7 @@ Method="Class_LR"			# Sliding Method (Class_LR / Class_RR)
 #~~~~~~~~~~~~~~ Actual location of EQ (Only for GMT plot)
 EVELAT="27.07"
 EVELON="54.99"
+
 ##### SAC Config
 F1_P=0.8				# Band-Pass Filter lower corner
 F2_P=5.0				# Band-Pass Filter upper corner
@@ -274,4 +275,83 @@ Grid_Search ()
 			
 			(( `echo "$dist < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
 			sed -i "/distances = /c\distances = num.linspace($dist,$dist,1)*km * cake.m2d" $ttime 
-			sed -i "/Phase =
+			sed -i "/Phase =/c\Phase = cake.PhaseDef(\'$phase\')" $ttime
+			TT=`python $ttime 2> /dev/null` && TTm=`echo $TT | awk '{print $6}'`
+			[[ -z "$TTm" ]] && continue
+			echo "$stnam $TTm" >> traveltimes.dat
+		done 		
+		[[ ! -s traveltimes.dat ]] && continue
+
+		closest_st_ttime=`grep -w "$Closest_Sta" traveltimes.dat | cut -f 2 -d " "`
+		[[ -z "$closest_st_ttime" ]] && echo "Program failed to calculate synthetic T-time for the nearest station!" && exit
+		
+		cat traveltimes.dat | while read info; do
+			stname=`echo $info | awk '{print $1}'`
+			[[ "$stname" = "$Closest_Sta" ]] && continue
+			sttime=`echo $info | awk '{print $2}'`
+			diff=`echo "$sttime - $closest_st_ttime" | bc -l`
+			dist=`grep -w "$stname" $input/dist_time.dat | cut -f 3 -d " "`
+			echo "$stnme $stname $dist $diff"
+		done > synt_tdiffs.dat	
+			
+		Syn_Slope=`Regression synt_tdiffs.dat`
+		Slope_Diff=`echo "scale=5; $Syn_Slope - $Real_Slope" | bc -l` && Slope_Diff=`Absolute $Slope_Diff`
+		echo "Regression Slope = $Slope_Diff" 
+		echo "$Glat $Glon $Slope_Diff" >> RMS.dat
+	done	
+	sort -n -k 3 $input/RMS.dat | head -1 > $input/Epicenter.dat	
+}
+
+TT_Calculator ()
+{
+	cat $input/P_Arrivals.dat | while read info; do
+		stnm=`echo $info | awk '{print $NF}'`
+		stla=`grep -w "$stnm" $Home/stations.dat | awk '{print $2}'`
+		stlo=`grep -w "$stnm" $Home/stations.dat | awk '{print $3}'`
+		[[ -z "$stla" ]] || [[ -z "$stlo" ]] && continue
+		echo "$stnm $stla $stlo"
+	done > stations.used	
+	
+	sed -i "/model =/c\model = cake.load_model(\'$Home/Velmodel.tvel\')" $ttime
+	sed -i "/source_depth =/c\source_depth = $initDP * km" $ttime		
+	
+	Nearest_Lat="$Closest_Lat"
+	Nearest_Lon="$Closest_Lon"			
+	grid
+	
+	Grid_Search
+	
+	N_Iter=${N_Iter%.*}
+	while [[ "$N_Iter" -gt "0" ]]; do
+		[[ ! -s $input/Epicenter.dat ]] && echo -e "Program Failed to Locate the Epicenter\nA more dense grid may be helpful." && exit
+		cat /dev/null > RMS.dat
+		Nearest_Lat=`cut -f 1 -d " " Epicenter.dat`
+		Nearest_Lon=`cut -f 2 -d " " Epicenter.dat`
+		Radius=`echo "scale=1; $Radius / 2" | bc -l`
+		Init_Grid_In=`echo "scale=1; $Init_Grid_In / 2" | bc -l`
+		grid 
+		Grid_Search
+		N_Iter=$((N_Iter - 1))
+	done	
+}
+
+Cleaner
+if [[ "$AutoPick" = "True" ]] || [[ "$AutoPick" = "true" ]]; then
+	P_Picker
+else
+	cd $input
+	[[ ! `ls *"$CH_St"Z* 2> /dev/null` ]] && echo "No vertical component found in input dir" && exit
+	for data in `ls *"$CH_St"Z*`; do
+		PSec=`saclst A f $data | awk '{print $2}'` 
+		(( `echo "$PSec == -12345" | bc -l` )) && continue
+		evtm=`saclst KZTIME f $data | awk '{print $2}'` 
+		stnm=`saclst KSTNM f $data | awk '{print $2}'` 		
+		Ptme=`date --date "$evtm UTC +$PSec sec" "+%H:%M:%S"`
+		echo "$data $PSec $Ptme $stnm" >> P_Arrivals.dat
+	done
+fi		
+vel_Reader
+arrival_diffs
+TT_Calculator
+map
+
