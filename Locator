@@ -259,7 +259,7 @@ Grid_Search ()
 		echo "Processing Grid point << Lat $Glat Lon $Glon >>"
 		cat /dev/null > $Glon-$Glat.dat
 
-		mindist=`distance $stlat $stlon $evela $evelo`
+		mindist=`distance $Closest_Lat $Closest_Lon $evela $evelo`
 		
 		cat stations.used | while read Sinfo; do
 			stnam=`echo $Sinfo | awk '{print $1}'`	
