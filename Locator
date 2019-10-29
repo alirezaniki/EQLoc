@@ -1,10 +1,9 @@
 #!/bin/bash
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Config
-AutoPick="False"				# Either to use Auto_Pick procedure or not (True/False)
 VM_Name="IRSC_Vel"			# Velocity model name
 initDP="10"				# Initial Depth to explor the epicenter (km)
-Depth1="5"				# Upper depth limit to search for the best depth (km)
+Depth1="8"				# Upper depth limit to search for the best depth (km)
 Depth2="15"				# Lower depth limit to search for the best depth (km)
 Depth_I="1"				# Depth intervals (km)
 CH_St="BH"				# Channel Stream ID
@@ -13,7 +12,8 @@ Init_Grid_In="1.0"			# Initial Grid Intervals (deg)
 Radius="2.0"				# Search Radius (deg)
 N_Iter="1"				# Number of grid search Iterations over the best 
 					# grid point to maximize the location accuracy.							
-												
+											
+AutoPick="False"			# Either to use Auto_Pick procedure or not (True/False)
 LTA_P="30"				# LTA Window Length for P phase Picking
 STA_P="03"				# STA Window Length for P phase Picking
 P_WTh="3"				# STA/LTA Threshold for P phase picking
@@ -23,8 +23,8 @@ Min_WTh_Th="2.5"			# Minimum acceptable WTh Threshold in Reprocessing
 Method="Class_LR"			# Sliding Method (Class_LR / Class_RR)
 
 #~~~~~~~~~~~~~~ Actual location of EQ (Only for GMT plot)
-EVELAT="34.56"
-EVELON="47.68"
+EVELAT="27.24"
+EVELON="55.06"
 
 ##### SAC Config
 F1_P=0.8				# Band-Pass Filter lower corner
@@ -212,7 +212,7 @@ map ()
 
 Regression ()
 {
-	awk '{print $4,$3}' $1 | gmt regress -Eo -Fp -o5
+	awk '{print $3,$4}' $1 | gmt regress -Eo -Fp -o5
 }
 
 vel_Reader ()
@@ -306,7 +306,7 @@ Grid_Search ()
 			
 		Syn_Slope=`Regression synt_tdiffs.dat`
 		Slope_Diff=`echo "scale=5; $Syn_Slope - $Real_Slope" | bc -l` && Slope_Diff=`Absolute $Slope_Diff`
-		echo "Misfit = $Slope_Diff"
+		echo "Misfit = $Slope_Diff" 
 		echo "Misfit = $Slope_Diff" >> $Glon-$Glat.dat
 		echo "$Glat $Glon $Slope_Diff" >> RMS.dat
 	done	
@@ -409,3 +409,4 @@ Real_Regression
 TT_Calculator
 Depth_BT
 map
+
