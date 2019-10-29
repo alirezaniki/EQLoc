@@ -1,4 +1,4 @@
-Depth (km)  Vp (km/s)  Vs (km/s)
+Depth (km)  Vp (km/s)  Vs (km/s)  # Must be here!
 0	5.38	3.05	2.72
 7	5.95	3.38	2.72
 12	6.15	3.49	2.72
