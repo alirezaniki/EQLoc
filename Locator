@@ -3,22 +3,22 @@
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Config
 AutoPick="False"				# Either to use Auto_Pick procedure or not (True/False)
 VM_Name="IRSC_Vel"			# Velocity model name
-initDP="10"							# Initial Depth to explor the epicenter (km)
-Depth1="5"							# Upper depth limit to search for the best depth (km)
-Depth2="15"							# Lower depth limit to search for the best depth (km)
-Depth_I="1"							# Depth intervals (km)
-CH_St="BH"							# Channel Stream ID
-PnPg_Th="190"						# Distance in km to declare between Pg and Pn
+initDP="10"				# Initial Depth to explor the epicenter (km)
+Depth1="5"				# Upper depth limit to search for the best depth (km)
+Depth2="15"				# Lower depth limit to search for the best depth (km)
+Depth_I="1"				# Depth intervals (km)
+CH_St="BH"				# Channel Stream ID
+PnPg_Th="190"				# Distance in km to declare between Pg and Pn
 Init_Grid_In="1.0"			# Initial Grid Intervals (deg)
-Radius="2.0"						# Search Radius (deg)
-N_Iter="1"							# Number of grid search Iterations over the best 
-												# grid point to maximize the location accuracy.							
+Radius="2.0"				# Search Radius (deg)
+N_Iter="1"				# Number of grid search Iterations over the best 
+					# grid point to maximize the location accuracy.							
 												
-LTA_P="30"						# LTA Window Length for P phase Picking
-STA_P="03"						# STA Window Length for P phase Picking
-P_WTh="3"							# STA/LTA Threshold for P phase picking
-Inc="01"							# Sliding Increament, Seconds
-WTh_I="0.5"						# STA/LTA Threshold Increament in Reprocessing
+LTA_P="30"				# LTA Window Length for P phase Picking
+STA_P="03"				# STA Window Length for P phase Picking
+P_WTh="3"				# STA/LTA Threshold for P phase picking
+Inc="01"				# Sliding Increament, Seconds
+WTh_I="0.5"				# STA/LTA Threshold Increament in Reprocessing
 Min_WTh_Th="2.5"			# Minimum acceptable WTh Threshold in Reprocessing
 Method="Class_LR"			# Sliding Method (Class_LR / Class_RR)
 
@@ -27,14 +27,14 @@ EVELAT="34.56"
 EVELON="47.68"
 
 ##### SAC Config
-F1_P=0.8							# Band-Pass Filter lower corner
-F2_P=5.0							# Band-Pass Filter upper corner
+F1_P=0.8				# Band-Pass Filter lower corner
+F2_P=5.0				# Band-Pass Filter upper corner
 
 
 #  Class_RR:	<=====================> LTA
-#															<=====> STA	
+#				<=====> STA	
 #  Class_LR:	<=====================> LTA
-#				  												<=====> STA
+#				    <=====> STA
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ bODY sCript (Do not ChAnge)
 
@@ -306,7 +306,7 @@ Grid_Search ()
 			
 		Syn_Slope=`Regression synt_tdiffs.dat`
 		Slope_Diff=`echo "scale=5; $Syn_Slope - $Real_Slope" | bc -l` && Slope_Diff=`Absolute $Slope_Diff`
-		echo "Regression Slope = $Slope_Diff" 
+		echo "Regression Slope = $Slope_Diff" >> $Glon-$Glat.dat
 		echo "$Glat $Glon $Slope_Diff" >> RMS.dat
 	done	
 	sort -n -k 3 $input/RMS.dat 2> /dev/null | head -1 > $input/Epicenter.dat	
