@@ -301,7 +301,7 @@ Grid_Search ()
 			sttime=`echo $info | awk '{print $2}'`
 			diff=`echo "$sttime - $closest_st_ttime" | bc -l`
 			dist=`grep -w "$stname" $input/dist_time.dat | cut -f 3 -d " "`
-			echo "$stnme $stname $dist $diff"
+			echo "$Closest_Sta $stname $dist $diff"
 		done > synt_tdiffs.dat	
 			
 		Syn_Slope=`Regression synt_tdiffs.dat`
