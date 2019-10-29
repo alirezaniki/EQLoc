@@ -306,7 +306,8 @@ Grid_Search ()
 			
 		Syn_Slope=`Regression synt_tdiffs.dat`
 		Slope_Diff=`echo "scale=5; $Syn_Slope - $Real_Slope" | bc -l` && Slope_Diff=`Absolute $Slope_Diff`
-		echo "Regression Slope = $Slope_Diff" >> $Glon-$Glat.dat
+		echo "Misfit = $Slope_Diff"
+		echo "Misfit = $Slope_Diff" >> $Glon-$Glat.dat
 		echo "$Glat $Glon $Slope_Diff" >> RMS.dat
 	done	
 	sort -n -k 3 $input/RMS.dat 2> /dev/null | head -1 > $input/Epicenter.dat	
