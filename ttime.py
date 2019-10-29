@@ -17,3 +17,6 @@ Phase = cake.PhaseDef('P')
 # calculate distances and arrivals and print them:
 for arrival in model.arrivals(distances, phases=Phase, zstart=source_depth):
     print '%13g %13g' % (arrival.x*cake.d2m/km, arrival.t)
+
+    
+    
