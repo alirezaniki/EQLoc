@@ -1,30 +1,31 @@
 #!/bin/bash
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Config
-VM_Name="IRSC_Vel"			# Velocity model name
-initDP="10"				# Initial Depth to explor the epicenter (km)
-Depth1="8"				# Upper depth limit to search for the best depth (km)
-Depth2="15"				# Lower depth limit to search for the best depth (km)
+VM_Name="IRSC_Vel"		# Velocity model name
+Dept_Prob="True"			# Search for optimal depth? (True/False)
+initDP="14"				# Initial Depth to explor the epicenter (km)
+Depth1="10"				# Upper depth limit to search for the best depth (km)
+Depth2="20"				# Lower depth limit to search for the best depth (km)
 Depth_I="1"				# Depth intervals (km)
 CH_St="BH"				# Channel Stream ID
-PnPg_Th="190"				# Distance in km to declare between Pg and Pn
-Init_Grid_In="1.0"			# Initial Grid Intervals (deg)
-Radius="2.0"				# Search Radius (deg)
-N_Iter="1"				# Number of grid search Iterations over the best 
-					# grid point to maximize the location accuracy.							
+PnPg_Th="190"			# Distance in km to declare between Pg and Pn
+Init_Grid_In="1.0"		# Initial Grid Intervals (deg)
+Radius="2.0"					# Search Radius (deg)
+N_Iter="1"						# Number of grid search Iterations over the best 
+									# grid point to maximize the location accuracy.							
 											
-AutoPick="False"			# Either to use Auto_Pick procedure or not (True/False)
+AutoPick="False"		# Either to use Auto_Pick procedure or not (True/False)
 LTA_P="30"				# LTA Window Length for P phase Picking
 STA_P="03"				# STA Window Length for P phase Picking
-P_WTh="3"				# STA/LTA Threshold for P phase picking
-Inc="01"				# Sliding Increament, Seconds
+P_WTh="3"					# STA/LTA Threshold for P phase picking
+Inc="01"					# Sliding Increament, Seconds
 WTh_I="0.5"				# STA/LTA Threshold Increament in Reprocessing
-Min_WTh_Th="2.5"			# Minimum acceptable WTh Threshold in Reprocessing
-Method="Class_LR"			# Sliding Method (Class_LR / Class_RR)
+Min_WTh_Th="2.5"		# Minimum acceptable WTh Threshold in Reprocessing
+Method="Class_LR"		# Sliding Method (Class_LR / Class_RR)
 
 #~~~~~~~~~~~~~~ Actual location of EQ (Only for GMT plot)
-EVELAT="27.24"
-EVELON="55.06"
+EVELAT="28.30"
+EVELON="57.30"
 
 ##### SAC Config
 F1_P=0.8				# Band-Pass Filter lower corner
@@ -96,7 +97,7 @@ GET_RMS_P ()
 
 Cleaner ()
 {
-	[[ `ls $input/*SAC` ]] && SAC="SAC" || SAC="sac"
+	[[ `ls $input/*SAC 2> /dev/null` ]] && SAC="SAC" || SAC="sac"
 	cd $input && ls -I "*$SAC" | xargs rm -f
 }
 
@@ -206,13 +207,8 @@ map ()
 	echo "$EVELON $EVELAT" | gmt psxy -R -J -Sa0.25 -Gred -i0,1 -K -O >> Map.ps
 	gmt psxy -R -J stations.used -St0.25c -Gblack -i2,1 -K -O >> Map.ps
 	cat Epicenter.dat | head -1 | gmt psxy -R -J -Sc0.25 -Gred -i1,0 -K -O >> Map.ps
-	clear && echo -e "\nFinal Earthquake Location:\n"	
+	echo -e "\nFinal Earthquake Location:\n"	
 	cat $input/Epicenter.dat	
-}
-
-Regression ()
-{
-	awk '{print $3,$4}' $1 | gmt regress -Eo -Fp -o5
 }
 
 vel_Reader ()
@@ -232,6 +228,24 @@ vel_Reader ()
 	done
 }
 
+Regression ()
+{
+	rm .up .down 2> /dev/null
+	# Start doing regression in Ylog Xlin data.
+	Xmean=`awk '{sum+=$4} END {print sum/NR}' $1`
+	Ymean=`awk '{sum+=$3} END {print sum/NR}' $1`
+
+	while read info; do
+		echo $info | awk -v Xave="$Xmean" -v Yave="$Ymean" '{print ($4 - Xave) * ($3 - Yave)}' >> .up
+		echo $info | awk -v Xave="$Xmean" '{print ($4 - Xave) * ($4 - Xave)}' >> .down
+	done < $1
+	UpSum=`awk '{Sum+=$1} END {print Sum}' .up`	
+	DoSum=`awk '{SuM+=$1} END {print SuM}' .down`
+	A=`echo "scale=4; $UpSum / $DoSum" | bc -l`
+	B=`echo "scale=4; $Ymean - ($A * $Xmean)" | bc -l`
+	awk -v A=$A -v B=$B 'BEGIN {print B / A}' 
+}
+
 Real_Regression ()
 {
 	export Closest_Inf=`sort -k 3 $input/P_Arrivals.dat | head -1`
@@ -242,7 +256,7 @@ Real_Regression ()
 	export Closest_Lon=`grep -w "$Closest_Sta" $Home/stations.dat | awk '{print $3}'`
 	[[ -z "$Closest_Lat" ]] || [[ -z "$Closest_Lon" ]] && echo "No information found for The closest station!" && exit
 	
-	cat $input/P_Arrivals.dat | while read info; do
+	cat $input/P_Arrivals.dat | sort -k 3 | while read info; do
 		stname=`echo $info | awk '{print $NF}'`	
 		[[ "$stname" = "$Closest_Sta" ]] && continue
 		stlat=`grep -w "$stname" $Home/stations.dat | awk '{print $2}'`
@@ -257,6 +271,21 @@ Real_Regression ()
 	export Real_Slope=`Regression dist_time.dat`
 }
 
+Ttime ()
+{
+	python - <<- EOF
+		from pyrocko import cake
+		import numpy as num
+		km = 1000.
+		model = cake.load_model('$Home/Velmodel.tvel')
+		source_depth = $Dep * km
+		distances = num.linspace($1,$1,1)* km * cake.m2d
+		Phase = cake.PhaseDef('$phase')
+		for arrival in model.arrivals(distances, phases=Phase, zstart=source_depth):
+		    print '%13g %13g' % (arrival.x*cake.d2m/km, arrival.t)
+		EOF
+}    
+
 Grid_Search ()
 {
 	cat Grids.dat | while read Ginfo; do
@@ -270,30 +299,28 @@ Grid_Search ()
 		
 		mindist=`distance $Closest_Lat $Closest_Lon $evela $evelo` && echo "Min-dist is = $mindist" >> $Glon-$Glat.dat
 		cat stations.used | while read Sinfo; do
-			stnam=`echo $Sinfo | awk '{print $1}'`	
+			stnam=`echo $Sinfo | awk '{print $1}'` 
 			stlat=`echo $Sinfo | awk '{print $2}'` 
 			stlon=`echo $Sinfo | awk '{print $3}'` 
-			dist=`distance $stlat $stlon $evela $evelo` 
-			(( `echo "$dist < $mindist" | bc -l` )) && cat /dev/null > dist_tmp && break 
+			dist=`distance $stlat $stlon $evela $evelo`
+			(( `echo "$dist < $mindist" | bc -l` )) && echo "$dist < $mindist" >> $Glon-$Glat.dat && cat /dev/null > dist_tmp && break 
 			echo "$stnam $dist" >> dist_tmp
-		done > dist_tmp
+		done 
 		[[ ! -s dist_tmp ]] && continue
 		
 		cat stations.used | while read Sinfo; do
 			stnam=`echo $Sinfo | awk '{print $1}'`	
 			dist=`grep -w "$stnam" dist_tmp | cut -f 2 -d " "` 
-			echo "distance to $stnam = $dist km" >> $Glon-$Glat.dat
 			(( `echo "$dist < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
-			sed -i "/distances = /c\distances = num.linspace($dist,$dist,1)*km * cake.m2d" $ttime 
-			sed -i "/Phase =/c\Phase = cake.PhaseDef(\'$phase\')" $ttime
-			TT=`python $ttime 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`
+			TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`
 			[[ -z "$TTm" ]] && continue
+			echo "distance to $stnam = $dist km, P_ttime = $TTm" >> $Glon-$Glat.dat
 			echo "$stnam $TTm" >> traveltimes.dat
 		done 		
-		[[ ! -s traveltimes.dat ]] && echo "No synthetic travel-time calculated for this grid point ..." && continue
+		[[ ! -s traveltimes.dat ]] && echo "No synthetic travel-time calculated for grid point: $evela, $evelo. Skipped ..." && continue
 
 		closest_st_ttime=`grep -w "$Closest_Sta" traveltimes.dat | cut -f 2 -d " "`
-		[[ -z "$closest_st_ttime" ]] && echo "Program failed to calculate synthetic T-time for the nearest station!" && exit 1
+		[[ -z "$closest_st_ttime" ]] && echo "No synthetic T-time calculated for the actual nearest station (Grid: $evela, $evelo). Skipped ..." && continue
 		
 		cat traveltimes.dat | while read info; do
 			stname=`echo $info | awk '{print $1}'`
@@ -311,7 +338,7 @@ Grid_Search ()
 		echo "$Glat $Glon $Slope_Diff" >> RMS.dat
 	done	
 	sort -n -k 3 $input/RMS.dat 2> /dev/null | head -1 > $input/Epicenter.dat	
-	[[ ! -s $input/Epicenter.dat ]] && echo -e "Program Failed to Locate the Epicenter\nA more dense grid may be helpful." && exit
+	[[ ! -s $input/Epicenter.dat ]] && echo -e "Program Failed to Locate the Epicenter\nA more dense grid may be helpful." && exit 1
 
 }
 
@@ -323,15 +350,12 @@ TT_Calculator ()
 		stlo=`grep -w "$stnm" $Home/stations.dat | awk '{print $3}'`
 		[[ -z "$stla" ]] || [[ -z "$stlo" ]] && continue
 		echo "$stnm $stla $stlo"
-	done > stations.used	
-	
-	sed -i "/model =/c\model = cake.load_model(\'$Home/Velmodel.tvel\')" $ttime
-	sed -i "/source_depth =/c\source_depth = $initDP * km" $ttime		
+	done > stations.used		
 	
 	Nearest_Lat="$Closest_Lat"
 	Nearest_Lon="$Closest_Lon"			
 	grid
-
+	Dep="$initDP"
 	Grid_Search
 	
 	N_Iter=${N_Iter%.*}
@@ -349,28 +373,25 @@ TT_Calculator ()
 
 Depth_BT ()
 {
-	evela=`cut -f 1 -d " " Epicenter.dat`
-	evelo=`cut -f 2 -d " " Epicenter.dat`
+	evela=`awk 'NR==1 {print $1}' Epicenter.dat`
+	evelo=`awk 'NR==1 {print $2}' Epicenter.dat`
 	echo "Let's Probe the Depth ... "
 	for Dep in $(seq "$Depth1" "$Depth_I" "$Depth2"); do
-		echo "Assessing Depth $Dep posibility ..."
-		sed -i "/source_depth =/c\source_depth = $Dep * km" $ttime		
+		echo "Assessing Depth $Dep posibility ..."	
 		cat stations.used | while read Sinfo; do
 			stnam=`echo $Sinfo | awk '{print $1}'`
 			stlat=`echo $Sinfo | awk '{print $2}'` 
 			stlon=`echo $Sinfo | awk '{print $3}'` 				
 			dist=`distance $stlat $stlon $evela $evelo` 
 			(( `echo "$dist < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
-			sed -i "/distances = /c\distances = num.linspace($dist,$dist,1)*km * cake.m2d" $ttime 
-			sed -i "/Phase =/c\Phase = cake.PhaseDef(\'$phase\')" $ttime
-			TT=`python $ttime 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`
+			TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`
 			[[ -z "$TTm" ]] && continue
 			echo "$stnam $TTm" 
 		done > traveltimes.dat	
-		[[ ! -s traveltimes.dat ]] && echo "No synthetic travel-time calculated for Depth = $Dep" && continue
+		[[ ! -s traveltimes.dat ]] && echo "No synthetic travel-time calculated for Depth = $Dep. Skipped ..." && continue
 
 		closest_st_ttime=`grep -w "$Closest_Sta" traveltimes.dat | cut -f 2 -d " "`
-		[[ -z "$closest_st_ttime" ]] && echo "Program failed to calculate synthetic T-time for the nearest station!" && exit 1
+		[[ -z "$closest_st_ttime" ]] && echo "No synthetic T-time calculated for the actual nearest station in Depth: $Dep. Skipped ..." && continue
 		
 		cat traveltimes.dat | while read info; do
 			stname=`echo $info | awk '{print $1}'`
@@ -407,6 +428,5 @@ fi
 vel_Reader
 Real_Regression
 TT_Calculator
-Depth_BT
+[[ "$Dept_Prob" = "True" ]] || [[ "$Dept_Prob" = "true" ]] && Depth_BT
 map
-
