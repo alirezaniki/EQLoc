@@ -1,7 +1,7 @@
 EQLoc
 -----
 
-An automated P-phase Picking Procedure and a Grid-Search based Method to locate (local) events.
+An automated P-phase Picking Procedure and a Grid-Search and inversion based Method to locate (local) events.
 
 Requirements
 ------------
