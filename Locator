@@ -2,30 +2,35 @@
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Config
 VM_Name="IRSC_Vel"		# Velocity model name
-Dept_Prob="True"			# Search for optimal depth? (True/False)
-initDP="14"				# Initial Depth to explor the epicenter (km)
-Depth1="10"				# Upper depth limit to search for the best depth (km)
-Depth2="20"				# Lower depth limit to search for the best depth (km)
+Dept_Prob="True"		# Search for optimal depth? (True/False)
+initDP="11"				# Initial Depth to explor the epicenter (km)
+Depth1="9"				# Upper depth limit to search for the best depth (km)
+Depth2="13"				# Lower depth limit to search for the best depth (km)
+
+S12_TD="5"				# This value is subtracted/added from/to the actual time differece
+						# of the first and second closest stations to define an interval for
+						# the same criteria in all grid points to restrict them from process.
+						
 Depth_I="1"				# Depth intervals (km)
 CH_St="BH"				# Channel Stream ID
 PnPg_Th="190"			# Distance in km to declare between Pg and Pn
 Init_Grid_In="1.0"		# Initial Grid Intervals (deg)
-Radius="2.0"					# Search Radius (deg)
-N_Iter="1"						# Number of grid search Iterations over the best 
-									# grid point to maximize the location accuracy.							
-											
+Radius="2.0"			# Search Radius (deg)
+N_Iter="1"				# Number of grid search Iterations over the best 
+						# grid point to maximize the location accuracy.							
+										
 AutoPick="False"		# Either to use Auto_Pick procedure or not (True/False)
 LTA_P="30"				# LTA Window Length for P phase Picking
 STA_P="03"				# STA Window Length for P phase Picking
-P_WTh="3"					# STA/LTA Threshold for P phase picking
-Inc="01"					# Sliding Increament, Seconds
+P_WTh="3"				# STA/LTA Threshold for P phase picking
+Inc="01"				# Sliding Increament, Seconds
 WTh_I="0.5"				# STA/LTA Threshold Increament in Reprocessing
 Min_WTh_Th="2.5"		# Minimum acceptable WTh Threshold in Reprocessing
 Method="Class_LR"		# Sliding Method (Class_LR / Class_RR)
 
 #~~~~~~~~~~~~~~ Actual location of EQ (Only for GMT plot)
-EVELAT="28.30"
-EVELON="57.30"
+EVELAT="29.38"
+EVELON="51.28"
 
 ##### SAC Config
 F1_P=0.8				# Band-Pass Filter lower corner
@@ -232,12 +237,12 @@ Regression ()
 {
 	rm .up .down 2> /dev/null
 	# Start doing regression in Ylog Xlin data.
-	Xmean=`awk '{sum+=$4} END {print sum/NR}' $1`
-	Ymean=`awk '{sum+=$3} END {print sum/NR}' $1`
+	Xmean=`awk '{sum+=$3} END {print sum/NR}' $1`
+	Ymean=`awk '{sum+=$4} END {print sum/NR}' $1`
 
 	while read info; do
-		echo $info | awk -v Xave="$Xmean" -v Yave="$Ymean" '{print ($4 - Xave) * ($3 - Yave)}' >> .up
-		echo $info | awk -v Xave="$Xmean" '{print ($4 - Xave) * ($4 - Xave)}' >> .down
+		echo $info | awk -v Xave="$Xmean" -v Yave="$Ymean" '{print ($3 - Xave) * ($4 - Yave)}' >> .up
+		echo $info | awk -v Xave="$Xmean" '{print ($3 - Xave) * ($3 - Xave)}' >> .down
 	done < $1
 	UpSum=`awk '{Sum+=$1} END {print Sum}' .up`	
 	DoSum=`awk '{SuM+=$1} END {print SuM}' .down`
@@ -249,13 +254,19 @@ Regression ()
 Real_Regression ()
 {
 	export Closest_Inf=`sort -k 3 $input/P_Arrivals.dat | head -1`
+	export SecondC_Inf=`sort -k 3 $input/P_Arrivals.dat | head -2 | tail -1`
 	export Closest_Sta=`echo $Closest_Inf | awk '{print $NF}'`
+	export SecondC_Sta=`echo $SecondC_Inf | awk '{print $NF}'`
 	export Closest_Tme=`echo $Closest_Inf | awk '{print $3}'`
+	export SecondC_Tme=`echo $SecondC_Inf | awk '{print $3}'`
 	export Closest_TmS=`time2sec $Closest_Tme`
+	export SecondC_TmS=`time2sec $SecondC_Tme`
 	export Closest_Lat=`grep -w "$Closest_Sta" $Home/stations.dat | awk '{print $2}'`
 	export Closest_Lon=`grep -w "$Closest_Sta" $Home/stations.dat | awk '{print $3}'`
+	export SecondC_Lat=`grep -w "$SecondC_Sta" $Home/stations.dat | awk '{print $2}'`
+	export SecondC_Lon=`grep -w "$SecondC_Sta" $Home/stations.dat | awk '{print $3}'`
 	[[ -z "$Closest_Lat" ]] || [[ -z "$Closest_Lon" ]] && echo "No information found for The closest station!" && exit
-	
+	[[ -z "$SecondC_Lat" ]] || [[ -z "$SecondC_Lon" ]] && echo "No information found for The second closest station!" && exit
 	cat $input/P_Arrivals.dat | sort -k 3 | while read info; do
 		stname=`echo $info | awk '{print $NF}'`	
 		[[ "$stname" = "$Closest_Sta" ]] && continue
@@ -283,7 +294,7 @@ Ttime ()
 		Phase = cake.PhaseDef('$phase')
 		for arrival in model.arrivals(distances, phases=Phase, zstart=source_depth):
 		    print '%13g %13g' % (arrival.x*cake.d2m/km, arrival.t)
-		EOF
+	EOF
 }    
 
 Grid_Search ()
@@ -297,13 +308,42 @@ Grid_Search ()
 		cat /dev/null > dist_tmp
 		cat /dev/null > traveltimes.dat
 		
-		mindist=`distance $Closest_Lat $Closest_Lon $evela $evelo` && echo "Min-dist is = $mindist" >> $Glon-$Glat.dat
+		mindist=`distance $Closest_Lat $Closest_Lon $evela $evelo`
+		dislimt=`echo "scale=2; $mindist - ($Init_Grid_In / 2 * 113)" | bc -l`	# deg ~ 113 km
+		echo "Minimum allowed epicentral distance for the closest station is $dislimt." >> $Glon-$Glat.dat
+		
+		# Condition 1 (time difference)
+		timedif=`grep -w "$Closest_Sta $SecondC_Sta" dist_time.dat | cut -f 4 -d " "`
+		t1=`echo "$timedif - $S12_TD" | bc -l`
+		t2=`echo "$timedif + $S12_TD" | bc -l`
+		echo "Time difference interval between $Closest_Sta and $SecondC_Sta must be $t1 to $t2 sec." >> $Glon-$Glat.dat
+		Dep="$initDP"
+		dist1="$mindist"
+		dist2=`distance $SecondC_Lat $SecondC_Lon $evela $evelo`
+		(( `echo "$dist1 < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
+		T1=`Ttime $dist1 2> /dev/null` && T1=`echo $T1 | awk '{print $2}'`
+		if [[ -z "$T1" ]]; then 
+			[[ "$phase" = "p" ]] && phase="P" || phase="p"
+			T1=`Ttime $dist1 2> /dev/null` && T1=`echo $T1 | awk '{print $2}'`
+		fi
+		(( `echo "$dist2 < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
+		T2=`Ttime $dist2 2> /dev/null` && T2=`echo $T2 | awk '{print $2}'`	
+		if [[ -z "$T2" ]]; then 
+			[[ "$phase" = "p" ]] && phase="P" || phase="p"
+			T2=`Ttime $dist2 2> /dev/null` && T2=`echo $T2 | awk '{print $2}'`
+		fi		
+		if [[ -n "$T1" ]] || [[ -n "$T2" ]]; then
+			DF=`echo "$T2 - $T1" | bc -l`
+			echo "$Closest_Sta = $T1 s, $SecondC_Sta = $T2 s, Diff = $DF s" >> $Glon-$Glat.dat
+			(( `echo "$DF < $t1" | bc -l` )) || (( `echo "$DF > $t2" | bc -l` )) && echo "Time criteria is not passed." >> $Glon-$Glat.dat && continue	
+		fi
+		
 		cat stations.used | while read Sinfo; do
 			stnam=`echo $Sinfo | awk '{print $1}'` 
 			stlat=`echo $Sinfo | awk '{print $2}'` 
 			stlon=`echo $Sinfo | awk '{print $3}'` 
 			dist=`distance $stlat $stlon $evela $evelo`
-			(( `echo "$dist < $mindist" | bc -l` )) && echo "$dist < $mindist" >> $Glon-$Glat.dat && cat /dev/null > dist_tmp && break 
+			(( `echo "$dist < $dislimt" | bc -l` )) && echo "$stnam, $dist < $dislimt" >> $Glon-$Glat.dat && cat /dev/null > dist_tmp && break 
 			echo "$stnam $dist" >> dist_tmp
 		done 
 		[[ ! -s dist_tmp ]] && continue
@@ -313,7 +353,10 @@ Grid_Search ()
 			dist=`grep -w "$stnam" dist_tmp | cut -f 2 -d " "` 
 			(( `echo "$dist < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
 			TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`
-			[[ -z "$TTm" ]] && continue
+			if [[ -z "$TTm" ]]; then 
+				[[ "$phase" = "p" ]] && phase="P" || phase="p"
+				TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`
+			fi
 			echo "distance to $stnam = $dist km, P_ttime = $TTm" >> $Glon-$Glat.dat
 			echo "$stnam $TTm" >> traveltimes.dat
 		done 		
@@ -332,7 +375,7 @@ Grid_Search ()
 		done > synt_tdiffs.dat	
 			
 		Syn_Slope=`Regression synt_tdiffs.dat`
-		Slope_Diff=`echo "scale=5; $Syn_Slope - $Real_Slope" | bc -l` && Slope_Diff=`Absolute $Slope_Diff`
+		Slope_Diff=`echo "scale=6; $Syn_Slope - $Real_Slope" | bc -l` && Slope_Diff=`Absolute $Slope_Diff`
 		echo "Misfit = $Slope_Diff" 
 		echo "Misfit = $Slope_Diff" >> $Glon-$Glat.dat
 		echo "$Glat $Glon $Slope_Diff" >> RMS.dat
@@ -385,7 +428,10 @@ Depth_BT ()
 			dist=`distance $stlat $stlon $evela $evelo` 
 			(( `echo "$dist < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
 			TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`
-			[[ -z "$TTm" ]] && continue
+			if [[ -z "$TTm" ]]; then 
+				[[ "$phase" = "p" ]] && phase="P" || phase="p"
+				TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`
+			fi
 			echo "$stnam $TTm" 
 		done > traveltimes.dat	
 		[[ ! -s traveltimes.dat ]] && echo "No synthetic travel-time calculated for Depth = $Dep. Skipped ..." && continue
