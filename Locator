@@ -3,28 +3,28 @@
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Config
 VM_Name="IRSC_Vel"		# Velocity model name
 Dept_Prob="True"		# Search for optimal depth? (True/False)
-initDP="11"				# Initial Depth to explor the epicenter (km)
-Depth1="9"				# Upper depth limit to search for the best depth (km)
-Depth2="13"				# Lower depth limit to search for the best depth (km)
+initDP="11"			# Initial Depth to explor the epicenter (km)
+Depth1="9"			# Upper depth limit to search for the best depth (km)
+Depth2="13"			# Lower depth limit to search for the best depth (km)
 
-S12_TD="5"				# This value is subtracted/added from/to the actual time differece
-						# of the first and second closest stations to define an interval for
-						# the same criteria in all grid points to restrict them from process.
+S12_TD="5"			# This value is subtracted/added from/to the actual time differece
+				# of the first and second closest stations to define an interval for
+				# the same criteria in all grid points to restrict them from process.
 						
-Depth_I="1"				# Depth intervals (km)
-CH_St="BH"				# Channel Stream ID
+Depth_I="1"			# Depth intervals (km)
+CH_St="BH"			# Channel Stream ID
 PnPg_Th="190"			# Distance in km to declare between Pg and Pn
 Init_Grid_In="1.0"		# Initial Grid Intervals (deg)
 Radius="2.0"			# Search Radius (deg)
-N_Iter="1"				# Number of grid search Iterations over the best 
-						# grid point to maximize the location accuracy.							
+N_Iter="1"			# Number of grid search Iterations over the best 
+				# grid point to maximize the location accuracy.							
 										
 AutoPick="False"		# Either to use Auto_Pick procedure or not (True/False)
-LTA_P="30"				# LTA Window Length for P phase Picking
-STA_P="03"				# STA Window Length for P phase Picking
-P_WTh="3"				# STA/LTA Threshold for P phase picking
-Inc="01"				# Sliding Increament, Seconds
-WTh_I="0.5"				# STA/LTA Threshold Increament in Reprocessing
+LTA_P="30"			# LTA Window Length for P phase Picking
+STA_P="03"			# STA Window Length for P phase Picking
+P_WTh="3"			# STA/LTA Threshold for P phase picking
+Inc="01"			# Sliding Increament, Seconds
+WTh_I="0.5"			# STA/LTA Threshold Increament in Reprocessing
 Min_WTh_Th="2.5"		# Minimum acceptable WTh Threshold in Reprocessing
 Method="Class_LR"		# Sliding Method (Class_LR / Class_RR)
 
