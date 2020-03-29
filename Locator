@@ -201,6 +201,10 @@ map ()
 	(( `echo "$GrdMaxLon >= $StaMaxLon" | bc -l` ))	&& MapMaxLon="$GrdMaxLon" || MapMaxLon="$StaMaxLon"
 	(( `echo "$GrdMinLat <= $StaMinLat" | bc -l` ))	&& MapMinLat="$GrdMinLat" || MapMinLat="$StaMinLat"
 	(( `echo "$GrdMaxLat >= $StaMaxLat" | bc -l` ))	&& MapMaxLat="$GrdMaxLat" || MapMaxLat="$StaMaxLat"	
+	(( `echo "$EVELAT <= $MapMinLat" | bc -l` )) && MapMinLat=`echo "$EVELAT - 0.75" | bc -l`
+	(( `echo "$EVELAT >= $MapMaxLat" | bc -l` )) && MapMaxLat=`echo "$EVELAT + 0.75" | bc -l`
+	(( `echo "$EVELON <= $MapMinLon" | bc -l` )) && MapMinLon=`echo "$EVELON - 0.75" | bc -l`
+	(( `echo "$EVELON >= $MapMaxLon" | bc -l` )) && MapMaxLon=`echo "$EVELON + 0.75" | bc -l`
 	
 	Lo1=`echo "$MapMinLon - 0.5" | bc -l`
 	Lo2=`echo "$MapMaxLon + 0.5" | bc -l`
