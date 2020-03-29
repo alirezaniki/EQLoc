@@ -3,9 +3,9 @@
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Config
 VM_Name="IRSC_Vel"		# Velocity model name
 Dept_Prob="True"		# Search for optimal depth? (True/False)
-initDP="11"			# Initial Depth to explor the epicenter (km)
-Depth1="9"			# Upper depth limit to search for the best depth (km)
-Depth2="13"			# Lower depth limit to search for the best depth (km)
+initDP="19"			# Initial Depth to explor the epicenter (km)
+Depth1="16"			# Upper depth limit to search for the best depth (km)
+Depth2="22"			# Lower depth limit to search for the best depth (km)
 
 S12_TD="5"			# This value is subtracted/added from/to the actual time differece
 				# of the first and second closest stations to define an interval for
@@ -29,8 +29,8 @@ Min_WTh_Th="2.5"		# Minimum acceptable WTh Threshold in Reprocessing
 Method="Class_LR"		# Sliding Method (Class_LR / Class_RR)
 
 #~~~~~~~~~~~~~~ Actual location of EQ (Only for GMT plot)
-EVELAT="29.38"
-EVELON="51.28"
+EVELAT="27.09"
+EVELON="54.84"
 
 ##### SAC Config
 F1_P=0.8				# Band-Pass Filter lower corner
