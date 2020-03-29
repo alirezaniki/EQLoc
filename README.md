@@ -15,7 +15,7 @@ Requirements
 
 Note:
 
-- In this release you have the choice on picking procedure to be manual or automated. If you chose the automated one then try to use some (e.g. 5 to 10) good-quality SAC data (vertical components) to avoid any kind of errors in picking procedure. Otherwise, You need to manually pick the first P arrivals in SAC data and save them.
+- In this release you have the choice on picking procedure to be manual or automated. If you chose the automated one then try to use some (e.g. 5 to 10) good-quality SAC data (vertical components) to avoid any kind of errors in picking procedure. Otherwise, You need to manually pick the first P arrivals in SAC data and save them into the input directory.
 
 - This code is only tested for local events.
 
