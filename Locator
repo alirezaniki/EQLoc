@@ -8,8 +8,9 @@ Depth1="16"			# Upper depth limit to search for the best depth (km)
 Depth2="22"			# Lower depth limit to search for the best depth (km)
 
 S12_TD="5"			# This value is subtracted/added from/to the actual time differece
-				# of the first and second closest stations to define an interval for
-				# the same criteria in all grid points to restrict them from process.
+				# of P arrivals in the first and second closest stations to define
+				# an interval for the same criteria in all grid points to restrict
+				# them from and speed up the process.
 						
 Depth_I="1"			# Depth intervals (km)
 CH_St="BH"			# Channel Stream ID
