@@ -1,0 +1,2 @@
+- Put your SAC data (only Z component required) here.
+- Components must be equal! (e.g. BH or SP)
