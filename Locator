@@ -68,7 +68,9 @@ rad2deg ()
 
 time2sec ()
 {
-	date '+%s' --date="$1"
+	sec=`date '+%s' --date="$1"`
+	msc=`date '+%N' --date="$1"`
+	echo "scale=2; $sec + ($msc / 1000000000)" | bc -l
 }
 
 Absolute ()
