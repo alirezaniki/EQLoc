@@ -1,7 +1,8 @@
-EQLoc
------
+EQLoc (V 1.2)
+---------
 
-An automated P-phase picking procedure and a grid-search/inversion based method to locate (local) events. (V 1.2)
+An automated P-phase picking procedure and a grid-search/inversion based method to locate (local) events. 
+
 In the current version the envelope function is used to enhance the phase picking procedure.
 
 Requirements
