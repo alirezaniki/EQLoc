@@ -380,6 +380,7 @@ Grid_Search ()
 		done 
 		[[ ! -s dist_tmp ]] && continue
 		
+		i=0
 		cat stations.used | while read Sinfo; do
 			stnam=`echo $Sinfo | awk '{print $1}'`	
 			dist=`grep -w "$stnam" dist_tmp | cut -f 2 -d " "` 
@@ -389,6 +390,8 @@ Grid_Search ()
 				[[ "$phase" = "p" ]] && phase="P" || phase="p"
 				TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`	 
 			fi
+			[[ -z $TTm ]] && i+=1
+			[[ $i -eq 2 ]] && echo "Two failures in travel time calculation. ignoring the grid." && break 2
 			echo "distance to $stnam = $dist km, P_ttime = $TTm" >> $Glon-$Glat.dat
 			echo "$stnam $TTm" >> traveltimes.dat
 		done 		
@@ -453,6 +456,7 @@ Depth_BT ()
 	echo "Let's Probe the Depth ... "
 	for Dep in $(seq "$Depth1" "$Depth_I" "$Depth2"); do
 		echo "Assessing Depth $Dep posibility ..."	
+		j=0
 		cat stations.used | while read Sinfo; do
 			stnam=`echo $Sinfo | awk '{print $1}'`
 			stlat=`echo $Sinfo | awk '{print $2}'` 
@@ -464,6 +468,8 @@ Depth_BT ()
 				[[ "$phase" = "p" ]] && phase="P" || phase="p"
 				TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`
 			fi
+			[[ -z $TTm ]] && j+=1
+			[[ $j -eq 2 ]] && echo "Two failures in travel time calculation. ignoring the Depth: $Dep." && break 2	
 			echo "$stnam $TTm" 
 		done > traveltimes.dat	
 		[[ ! -s traveltimes.dat ]] && echo "No synthetic travel-time calculated for Depth = $Dep. Skipped ..." && continue
