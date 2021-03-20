@@ -3,51 +3,49 @@
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Config
 VM_Name="IRSC_Vel"		# Velocity model name
 Dept_Prob="True"		# Search for optimal depth? (True/False)
-initDP="19"			# Initial Depth to explor the epicenter (km)
-Depth1="16"			# Upper depth limit to search for the best depth (km)
-Depth2="22"			# Lower depth limit to search for the best depth (km)
-
-S12_TD="5"			# This value is subtracted/added from/to the actual time differece
-				# of P arrivals in the first and second closest stations to define
-				# an interval for the same criteria in all grid points to restrict
-				# them from and speed up the process.
+initDP="10"				# Initial Depth to explor the epicenter (km)
+Depth1="8"				# Upper depth limit to search for the best depth (km)
+Depth2="12"				# Lower depth limit to search for the best depth (km)
+Depth_I="1"				# Depth intervals in depth optimization (km)
+SAC="sac"				# Sac-data input-file extension (SAC/sac)
+S12_TD="10"			# This value is subtracted/added from/to the actual time differece
+						# of P arrivals in the first and second closest stations to define
+						# an interval for the same criteria in all grid points to restrict
+						# them from and boost the process.
 						
-Depth_I="1"			# Depth intervals (km)
-CH_St="BH"			# Channel Stream ID
 PnPg_Th="190"			# Distance in km to declare between Pg and Pn
 Init_Grid_In="1.0"		# Initial Grid Intervals (deg)
 Radius="2.0"			# Search Radius (deg)
-N_Iter="1"			# Number of grid search Iterations over the best 
-				# grid point to maximize the location accuracy.							
+N_Iter="2"				# Number of grid search Iterations over the best 
+						# grid point to maximize the location accuracy.							
 										
-AutoPick="False"		# Either to use Auto_Pick procedure or not (True/False)
-LTA_P="30"			# LTA Window Length for P phase Picking
-STA_P="03"			# STA Window Length for P phase Picking
-P_WTh="3"			# STA/LTA Threshold for P phase picking
-Inc="01"			# Sliding Increament, Seconds
-WTh_I="0.5"			# STA/LTA Threshold Increament in Reprocessing
-Min_WTh_Th="2.5"		# Minimum acceptable WTh Threshold in Reprocessing
+AutoPick="True"			# Either to use Auto_Pick procedure or not (True/False)
+LTA_P="30"				# LTA Window Length for P phase Picking
+STA_P="03"				# STA Window Length for P phase Picking
+P_WTh="5"				# STA/LTA Threshold for P phase-picking triggering
+Inc="01"				# Sliding Increament, Seconds
+WTh_I="0.5"				# STA/LTA Threshold subtraction value in Reprocessing (in case no phase picked at the first round)
+Min_WTh_Th="2.5"		# Minimum acceptable P_WTh Threshold in Reprocessing
 Method="Class_LR"		# Sliding Method (Class_LR / Class_RR)
 
 #~~~~~~~~~~~~~~ Actual location of EQ (Only for GMT plot)
-EVELAT="27.09"
-EVELON="54.84"
+EVELAT="28.25"
+EVELON="57.92"
 
 ##### SAC Config
-F1_P=0.8				# Band-Pass Filter lower corner
+F1_P=1.0				# Band-Pass Filter lower corner
 F2_P=5.0				# Band-Pass Filter upper corner
 
 
 #  Class_RR:	<=====================> LTA
-#				<=====> STA	
+#								<=====> STA	
 #  Class_LR:	<=====================> LTA
-#				    <=====> STA
+#				    				<=====> STA
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ bODY sCript (Do not ChAnge)
 
 Home=`dirname $(readlink -f "$0")`
-input="$Home/Input"
-ttime="$Home/ttime.py"		
+input="$Home/Input"	
 VelModel="$Home/$VM_Name"	
 
 
@@ -94,7 +92,33 @@ distance ()
 
 Data_Pre_Pro ()
 {
-	echo -e "r *"$CH_St"Z* \n rglitches \n rtr; rmean; taper \n bp c $F1_P $F2_P n 4 \n wh; w over \n q \n" | sac 2> /dev/null 1>&2
+	python - <<- EOF
+		import warnings
+		import glob
+
+		with warnings.catch_warnings ():	
+		    warnings.filterwarnings("ignore")
+		    from obspy import read, Trace, Stream, signal
+				
+		for data in glob.glob ('*$SAC'):
+		    st = read (data)	
+		    data = st[0].data
+		    stat = st[0].stats.station
+		    netw = st[0].stats.network
+		    chan = st[0].stats.channel
+
+		    st_filt = st.copy()		
+		    st_filt.filter ('highpass', freq=$F1_P, corners=3, zerophase=True)
+		    st_filt.filter ('lowpass', freq=$F2_P, corners=3, zerophase=True)
+		    st_filt.detrend ("spline", order=3, dspline=500)
+			
+		    envelope_points = signal.filter.envelope (st_filt[0].data)
+
+		    out_trace = Stream ([Trace (data = envelope_points, header=st[0].stats)])
+		    output_name = f'envelope.{stat}.{netw}.{chan}.$SAC'
+		    out_trace.write (output_name, format="SAC", encoding=5)		
+		
+	EOF
 }
 
 GET_RMS_P ()
@@ -105,8 +129,10 @@ GET_RMS_P ()
 
 Cleaner ()
 {
+	cd $input  
 	[[ `ls $input/*SAC 2> /dev/null` ]] && SAC="SAC" || SAC="sac"
-	cd $input && ls -I "*$SAC" | xargs rm -f
+	ls -I "*$SAC" | xargs rm -f
+	rm envelope* 2> /dev/null
 }
 
 P_Picker_Body ()
@@ -152,17 +178,16 @@ P_Picker_Body ()
 P_Picker ()
 {
 	cd $input
-	[[ ! `ls *"$CH_St"Z* 2> /dev/null` ]] && echo "No vertical component found in input dir" && exit
 	Data_Pre_Pro
 		
-	for data in `ls *"$CH_St"Z*`; do
+	for data in `ls envelope*`; do
 		echo -e "# Working on\n$data (Picking P phase)"
 		cat /dev/null > .tmp
 		P_Picker_Body
 	done
 
 	Or_WTh="$P_WTh"
-	for data in `ls *"$CH_St"Z*`; do
+	for data in `ls envelope*`; do
 		if [[ ! `grep $data P_Arrivals.dat 2> /dev/null` ]]; then
 			echo -e "# Reprocessing data:\n$data (Picking P phase)"
 			while [[ ! `grep $data P_Arrivals.dat 2> /dev/null` ]]; do
@@ -227,10 +252,10 @@ vel_Reader ()
 {
 	cat /dev/null > $Home/Velmodel.tvel
 	sed -i '/^$/d' $VelModel
-	read -a DP <<< `awk 'NR > 1 {print $1}' $VelModel`
-	read -a VP <<< `awk 'NR > 1 {print $2}' $VelModel`
-	read -a VS <<< `awk 'NR > 1 {print $3}' $VelModel`
-	read -a DN <<< `awk 'NR > 1 {print $4}' $VelModel`
+	read -a DP <<< `awk 'NR > 1 {print $1}' $VelModel | tr '\n' ' '`
+	read -a VP <<< `awk 'NR > 1 {print $2}' $VelModel | tr '\n' ' '`
+	read -a VS <<< `awk 'NR > 1 {print $3}' $VelModel | tr '\n' ' '`
+	read -a DN <<< `awk 'NR > 1 {print $4}' $VelModel | tr '\n' ' '`
 	
 	echo -e "# Header Line\n# Header Line\n${DP[0]}  ${VP[0]}   ${VS[0]}   ${DN[0]}" > $Home/Velmodel.tvel
 	for ((i=1; i<${#DP[@]}; i++)); do
@@ -242,20 +267,17 @@ vel_Reader ()
 
 Regression ()
 {
-	rm .up .down 2> /dev/null
-	# Start doing regression in Ylog Xlin data.
-	Xmean=`awk '{sum+=$3} END {print sum/NR}' $1`
-	Ymean=`awk '{sum+=$4} END {print sum/NR}' $1`
-
-	while read info; do
-		echo $info | awk -v Xave="$Xmean" -v Yave="$Ymean" '{print ($3 - Xave) * ($4 - Yave)}' >> .up
-		echo $info | awk -v Xave="$Xmean" '{print ($3 - Xave) * ($3 - Xave)}' >> .down
-	done < $1
-	UpSum=`awk '{Sum+=$1} END {print Sum}' .up`	
-	DoSum=`awk '{SuM+=$1} END {print SuM}' .down`
-	A=`echo "scale=4; $UpSum / $DoSum" | bc -l`
-	B=`echo "scale=4; $Ymean - ($A * $Xmean)" | bc -l`
-	awk -v A=$A -v B=$B 'BEGIN {print B / A}' 
+	x=`awk '{print $3}' $1 | tr '\n' ', '`
+	y=`awk '{print $4}' $1 | tr '\n' ', '`
+	
+	python - <<- END
+		from scipy import stats
+		import numpy as np
+		X = np.array ([$x])
+		Y = np.array ([$y])
+		slope, intercept, r, _, _ = stats.linregress(X, Y)
+		print (r**2)
+	END
 }
 
 Real_Regression ()
@@ -291,15 +313,16 @@ Real_Regression ()
 
 Ttime ()
 {
-	python - <<- EOF
+	python2 - <<- EOF
 		from pyrocko import cake
-		import numpy as num
+		import numpy as np
 		km = 1000.
+		
 		model = cake.load_model('$Home/Velmodel.tvel')
 		source_depth = $Dep * km
-		distances = num.linspace($1,$1,1)* km * cake.m2d
-		Phase = cake.PhaseDef('$phase')
-		for arrival in model.arrivals(distances, phases=Phase, zstart=source_depth):
+		distance = np.array ([$1])* km * cake.m2d
+		Phase = cake.PhaseDef ('$phase')
+		for arrival in model.arrivals (distance, phases=Phase, zstart=source_depth):
 		    print '%13g %13g' % (arrival.x*cake.d2m/km, arrival.t)
 	EOF
 }    
@@ -328,21 +351,23 @@ Grid_Search ()
 		dist1="$mindist"
 		dist2=`distance $SecondC_Lat $SecondC_Lon $evela $evelo`
 		(( `echo "$dist1 < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
-		T1=`Ttime $dist1 2> /dev/null` && T1=`echo $T1 | awk '{print $2}'`
+		T1=`Ttime $dist1  2> /dev/null` && T1=`echo $T1 | awk '{print $2}'`	
 		if [[ -z "$T1" ]]; then 
 			[[ "$phase" = "p" ]] && phase="P" || phase="p"
-			T1=`Ttime $dist1 2> /dev/null` && T1=`echo $T1 | awk '{print $2}'`
+			T1=`Ttime $dist1 2> /dev/null` && T1=`echo $T1 | awk '{print $2}'`	
 		fi
 		(( `echo "$dist2 < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
 		T2=`Ttime $dist2 2> /dev/null` && T2=`echo $T2 | awk '{print $2}'`	
 		if [[ -z "$T2" ]]; then 
 			[[ "$phase" = "p" ]] && phase="P" || phase="p"
-			T2=`Ttime $dist2 2> /dev/null` && T2=`echo $T2 | awk '{print $2}'`
+			T2=`Ttime $dist2 2> /dev/null` && T2=`echo $T2 | awk '{print $2}'`	
 		fi		
-		if [[ -n "$T1" ]] || [[ -n "$T2" ]]; then
+		if [[ -n "$T1" ]] && [[ -n "$T2" ]]; then
 			DF=`echo "$T2 - $T1" | bc -l`
 			echo "$Closest_Sta = $T1 s, $SecondC_Sta = $T2 s, Diff = $DF s" >> $Glon-$Glat.dat
 			(( `echo "$DF < $t1" | bc -l` )) || (( `echo "$DF > $t2" | bc -l` )) && echo "Time criteria is not passed." >> $Glon-$Glat.dat && continue	
+		else
+			echo "insufficient travel time info for the closest stations, skipping the grid point .." >> $Glon-$Glat.dat && continue	
 		fi
 		
 		cat stations.used | while read Sinfo; do
@@ -359,10 +384,10 @@ Grid_Search ()
 			stnam=`echo $Sinfo | awk '{print $1}'`	
 			dist=`grep -w "$stnam" dist_tmp | cut -f 2 -d " "` 
 			(( `echo "$dist < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
-			TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`
+			TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`	
 			if [[ -z "$TTm" ]]; then 
 				[[ "$phase" = "p" ]] && phase="P" || phase="p"
-				TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`
+				TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`	 
 			fi
 			echo "distance to $stnam = $dist km, P_ttime = $TTm" >> $Glon-$Glat.dat
 			echo "$stnam $TTm" >> traveltimes.dat
@@ -382,7 +407,7 @@ Grid_Search ()
 		done > synt_tdiffs.dat	
 			
 		Syn_Slope=`Regression synt_tdiffs.dat`
-		Slope_Diff=`echo "scale=6; $Syn_Slope - $Real_Slope" | bc -l` && Slope_Diff=`Absolute $Slope_Diff`
+		Slope_Diff=`echo "scale=6; $Real_Slope - $Syn_Slope" | bc -l` && Slope_Diff=`Absolute $Slope_Diff`
 		echo "Misfit = $Slope_Diff" 
 		echo "Misfit = $Slope_Diff" >> $Glon-$Glat.dat
 		echo "$Glat $Glon $Slope_Diff" >> RMS.dat
@@ -463,13 +488,15 @@ Depth_BT ()
 
 }
 
+
 Cleaner
+[[ ! `ls $input/*$SAC 2> /dev/null` ]] && echo "No seismic data found in input dir" && exit
+
 if [[ "$AutoPick" = "True" ]] || [[ "$AutoPick" = "true" ]]; then
 	P_Picker
 else
 	cd $input
-	[[ ! `ls *"$CH_St"Z* 2> /dev/null` ]] && echo "No vertical component found in input dir" && exit
-	for data in `ls *"$CH_St"Z*`; do
+	for data in `ls *$SAC`; do
 		PSec=`saclst A f $data | awk '{print $2}'` 
 		(( `echo "$PSec == -12345" | bc -l` )) && continue
 		evtm=`saclst KZTIME f $data | awk '{print $2}'` 
@@ -477,7 +504,8 @@ else
 		Ptme=`date --date "$evtm UTC +$PSec sec" "+%H:%M:%S"`
 		echo "$data $PSec $Ptme $stnm" >> P_Arrivals.dat
 	done
-fi		
+fi
+
 vel_Reader
 Real_Regression
 TT_Calculator
