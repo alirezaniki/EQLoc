@@ -1,4 +1,4 @@
-EQLoc (V 1.2)
+EQLoc (V1.2)
 ---------
 
 An automated P-phase picking procedure and a grid-search/inversion based method to locate (local) events. 
