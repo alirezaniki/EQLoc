@@ -1,9 +1,11 @@
-EQLoc (V1.2)
+EQLoc (V 1.2.1)
 ---------
 
-An automated P-phase picking procedure and a grid-search/inversion based method to locate (local) events. 
+An automated P-phase picking procedure and a grid-search/inversion-based method to locate (local) events. 
 
-In the current version the envelope function is used to enhance the phase picking procedure.
+In the current, version the envelope function is used to enhance the phase picking procedure.
+
+
 
 Requirements
 ------------
@@ -12,15 +14,25 @@ Requirements
 
 2- GMT (Version 5.x)
 
-3- Pyrocko (on python2)
+3- Pyrocko (on python3)
+
+4- Obspy (on python3)
 
 
 Note:
 -----
 
-In this release you have the choice on picking procedure to be manual or automated. If you chose the automated method then you better try to use a few (e.g. 5 to 10) good-quality SAC data (only vertical components) to avoid any kind of errors in picking procedure. Otherwise, You need to manually pick the first P arrivals in the SAC data and store them into the input directory.
+At your first test, run "bash Locate -h" to get instructed.
+
+In this version both MSEED (.mseed) and SAC (.sac) data are supported (set with "data_f" parameter). Supply the Input/ directory with vertical components of different stations.
+
+Two files are required by this program; (1) station info file (see the example file stations.dat; do not change the file name), and (2) velocity model (see the example file; set the file name to VM_Name parameter). 
+
+Set a large and small value for P_WTh (e.g. 10-15) and Wth_I (0.5-1.0) parameters, respectively, and use the program's phase-picking module (-p flag) to get an idea of optimal value for STA/LTA in different stations. Afterward, you can adjust these parameters more wisely and move forward.
+
+After doing so, you can start the locating process by issuing "bash Locator -l". This command does both picking and locating procedures. If the P arrivals are already determined satisfactorily, just set the Autopick parameter to "False" to make the program skip the picking process and read the arrivals from the SAC headers (MSEED data is not supported in this case).
 
 This code is only tested for local events.
 
-Please feel free to contact me in case of error of any kinds.
+Please feel free to contact me in case of an error of any kind.
 
