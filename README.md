@@ -3,7 +3,7 @@ EQLoc (V 1.2.1)
 
 An automated P-phase picking procedure and a grid-search/inversion-based method to locate (local) events. 
 
-In the current version, the normalized data are used to enhance the phase picking procedure.
+In the current version, the normalized data and their corresponding sta/lta plot are used to enhance the phase picking procedure.
 
 
 Requirements
