@@ -36,17 +36,17 @@ PnPg_Th="190"
 # Initial Search Grid Intervals (deg) (Grid center is on the closest station)
 Init_Grid_In="0.5"
 # Search Radius (deg)
-Radius="3"	
+Radius="2"	
 # Number of grid search Iterations over the best grid point to maximize the location accuracy.	
-N_Iter="1"				
+N_Iter="2"				
 						
 # LTA and STA Window Lengths for sta/lta diagram (single character for < 10, e.g., 1,2,3 ..)
 LTA_P="20"				
 STA_P="1"				
 
 #~~~~~~~~~~~~~~ Actual location of EQ (Only for GMT plot)
-EVELAT="34.12"
-EVELON="58.10"
+EVELAT="33.37"
+EVELON="57.32"
 
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ bODY sCript (Do not ChAnge)
