@@ -27,9 +27,9 @@ Supply the Input/ directory with vertical components of different stations. Data
 
 Two files are required in advance; (1) station info file (see the example file stations.dat; do not change the file name), and (2) velocity model (see the example file; set the file name to VM_Name parameter). 
 
-In this version, we use the STA/LTA diagram instead of the common STA/LTA sliding window to accelerate and simplify the picking procedure. The results will be stored into the sac files to be used in location procedure. Adjuct the related parameters (e.g., LTA_P and LTA_P) within the main code then run the phase picking process (bash Locator -p). Before going to next step, make sure the picks are fine.
+In this version, we use the STA/LTA diagram instead of the common STA/LTA sliding window to accelerate and simplify the picking procedure. The results will be stored in the sac files to be used in the location procedure. Adjust the related parameters (e.g., LTA_P and LTA_P) within the main code then run the phase picking process (bash Locator -p). Before going to the next step, make sure the picks are fine.
 
-After doing so, you can start the locating process by issuing "bash Locator -l". This command does both picking and locating procedures. If P arrivals are already determined in advance (e.g., manually added to the original data or using -p flag), one can set the Autopick parameter to "False" to force the program skip the picking process and read the arrivals from the original SAC files.
+After doing so, you can start the locating process by issuing "bash Locator -l". This command does both picking and locating procedures. If P arrivals are already determined in advance (e.g., manually added to the original data or using -p flag), one can set the Autopick parameter to "False" to force the program to skip the picking process and read the arrivals from the original SAC files. In the end, there will be a .ps file within the Input/ directory.
 
 This code is only tested for local events.
 
