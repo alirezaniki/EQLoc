@@ -1,6 +1,0 @@
-if have accidentially lost the processing.py file do the following 
-or just simply download it again from github.
-
->> pip install uncompyle6
-
->> uncompyle6 ./processing.cpython-36.pyc > ../processing.py
