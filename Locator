@@ -1,31 +1,48 @@
 #!/bin/bash
 
+# Created by Alireza Niksejel (ARNS)
+# Dalhousie University
+
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Config
-VM_Name="loc_vel_model"	# Velocity model name
-AutoPick="False"		# Either to use Auto_Pick procedure or not (True/False)
+# Velocity model name
+VM_Name="loc_vel_model"	
+# Either to use Auto_Pick procedure or not (True/False)
+AutoPick="False"
 
-Dept_Prob="True"		# Search for optimal depth? (True/False)
-initDP="9"				# Initial Depth to explor the epicenter (km)
-Depth1="7"				# Upper depth limit to search for the best depth (km)
-Depth2="11"				# Lower depth limit to search for the best depth (km)
-Depth_I="1"				# Depth intervals in depth optimization (km)
+# Search for optimal depth? (True/False)
+Dept_Prob="True"	
+# Initial (raw) Depth to explor the epicenter (km)
+initDP="9"
+# Upper depth limit to search for the best depth (km)
+Depth1="7"	
+# Lower depth limit to search for the best depth (km)
+Depth2="11"
+# Depth interval in depth optimization (km)
+Depth_I="1"				
 
-data_f="sac"			# Data file extention (SAC/sac; exactly same as the data extension)
-S12_TD="7"				# Imagine that the actual time difference between the first and the second
-						# closest stations is N. To boost the process, we omit all grid points in 
-						# which the same criteria is outside the range N-S12_TD <= X >=  N+S12_TD
+# Data file extention (SAC/sac; exactly same as the data extension)
+data_f="sac"
+# Imagine that the actual time difference between the first and the second
+# closest stations is N. To boost the process, we omit all grid points in 
+# which the same criteria is outside the range N-S12_TD <= X >=  N+S12_TD
+S12_TD="7"
 
-F1_P=5					# Band-Pass Filter lower corner
-F2_P=7					# Band-Pass Filter upper corner						
+# Band-Pass Filter corners for data pre-processing
+F1_P=5					
+F2_P=7						
+
+# Distance in km to declare between Pg and Pn
+PnPg_Th="190"	
+# Initial Search Grid Intervals (deg) (Grid center is on the closest station)
+Init_Grid_In="0.5"
+# Search Radius (deg)
+Radius="3"	
+# Number of grid search Iterations over the best grid point to maximize the location accuracy.	
+N_Iter="1"				
 						
-PnPg_Th="190"			# Distance in km to declare between Pg and Pn
-Init_Grid_In="0.5"		# Initial Search Grid Intervals (deg) (Grid center is on the closest station)
-Radius="3"				# Search Radius (deg)
-N_Iter="1"				# Number of grid search Iterations over the best grid point to maximize the location accuracy.	
-						# 
-
-LTA_P="20"				# LTA Window Length for sta/lta diagram (single character for < 10, e.g., 1,2,3 ..)
-STA_P="1"				# STA Window Length for sta/lta diagram (single character for < 10)
+# LTA and STA Window Lengths for sta/lta diagram (single character for < 10, e.g., 1,2,3 ..)
+LTA_P="20"				
+STA_P="1"				
 
 #~~~~~~~~~~~~~~ Actual location of EQ (Only for GMT plot)
 EVELAT="34.12"
