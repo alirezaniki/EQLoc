@@ -23,9 +23,9 @@ Note:
 
 At your first test, run "bash Locate -h" to get instructed.
 
-Supply the Input/ directory with vertical components of different stations.
+Supply the Input/ directory with vertical components of different stations. Data must be in SAC format containing at least "$LTA_P" seconds of noise length before P arrival.
 
-Two files are required by this program; (1) station info file (see the example file stations.dat; do not change the file name), and (2) velocity model (see the example file; set the file name to VM_Name parameter). 
+Two files are required in advance; (1) station info file (see the example file stations.dat; do not change the file name), and (2) velocity model (see the example file; set the file name to VM_Name parameter). 
 
 In this version, we use the STA/LTA diagram instead of the common STA/LTA sliding window to accelerate and simplify the picking procedure. The results from this process will be stored into the sac files to be used in location procedure. Adjuct the related parameters (e.g., LTA_P and LTA_P) within the main code then run the phase picking process (bash Locator -p).
 
