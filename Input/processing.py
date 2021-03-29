@@ -10,7 +10,7 @@ def normalization(trace):
     return trace
 
 
-def sta_lta_div(trace, nsta, nlta):
+def sta_lta_div (trace, nsta, nlta):
     from obspy import Trace
     import numpy as np
 
@@ -34,8 +34,7 @@ def sta_lta_div(trace, nsta, nlta):
         S1 += nsta
 
     data = Trace (data=stlt, header=trace.stats)
-    data.taper (max_percentage = 0.05)    
-    data.write (f'stalta_{station}', format="SAC")
+    data.taper (max_percentage = 0.1)    
     max = data.data.argmax()
     return max
 
