@@ -1,57 +1,48 @@
 #!/bin/bash
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Config
-VM_Name="IRSC_Vel"		# Velocity model name
+VM_Name="loc_vel_model"	# Velocity model name
+AutoPick="False"		# Either to use Auto_Pick procedure or not (True/False)
+
 Dept_Prob="True"		# Search for optimal depth? (True/False)
-initDP="10"				# Initial Depth to explor the epicenter (km)
-Depth1="8"				# Upper depth limit to search for the best depth (km)
-Depth2="12"				# Lower depth limit to search for the best depth (km)
+initDP="9"				# Initial Depth to explor the epicenter (km)
+Depth1="7"				# Upper depth limit to search for the best depth (km)
+Depth2="11"				# Lower depth limit to search for the best depth (km)
 Depth_I="1"				# Depth intervals in depth optimization (km)
-SAC="sac"				# Sac-data input-file extension (SAC/sac)
-S12_TD="10"			# This value is subtracted/added from/to the actual time differece
-						# of P arrivals in the first and second closest stations to define
-						# an interval for the same criteria in all grid points to restrict
-						# them from and boost the process.
+
+data_f="sac"			# Data file extention (SAC/sac; exactly same as the data extension)
+S12_TD="7"				# Imagine that the actual time difference between the first and the second
+						# closest stations is N. To boost the process, we omit all grid points in 
+						# which the same criteria is outside the range N-S12_TD <= X >=  N+S12_TD
+
+F1_P=5					# Band-Pass Filter lower corner
+F2_P=7					# Band-Pass Filter upper corner						
 						
 PnPg_Th="190"			# Distance in km to declare between Pg and Pn
-Init_Grid_In="1.0"		# Initial Grid Intervals (deg)
-Radius="2.0"			# Search Radius (deg)
-N_Iter="2"				# Number of grid search Iterations over the best 
-						# grid point to maximize the location accuracy.							
-										
-AutoPick="True"			# Either to use Auto_Pick procedure or not (True/False)
-LTA_P="30"				# LTA Window Length for P phase Picking
-STA_P="03"				# STA Window Length for P phase Picking
-P_WTh="5"				# STA/LTA Threshold for P phase-picking triggering
-Inc="01"				# Sliding Increament, Seconds
-WTh_I="0.5"				# STA/LTA Threshold subtraction value in Reprocessing (in case no phase picked at the first round)
-Min_WTh_Th="2.5"		# Minimum acceptable P_WTh Threshold in Reprocessing
-Method="Class_LR"		# Sliding Method (Class_LR / Class_RR)
+Init_Grid_In="0.5"		# Initial Search Grid Intervals (deg) (Grid center is on the closest station)
+Radius="3"				# Search Radius (deg)
+N_Iter="1"				# Number of grid search Iterations over the best grid point to maximize the location accuracy.	
+						# 
+
+LTA_P="20"				# LTA Window Length for sta/lta diagram (single character for < 10, e.g., 1,2,3 ..)
+STA_P="1"				# STA Window Length for sta/lta diagram (single character for < 10)
 
 #~~~~~~~~~~~~~~ Actual location of EQ (Only for GMT plot)
-EVELAT="28.25"
-EVELON="57.92"
+EVELAT="34.12"
+EVELON="58.10"
 
-##### SAC Config
-F1_P=1.0				# Band-Pass Filter lower corner
-F2_P=5.0				# Band-Pass Filter upper corner
-
-
-#  Class_RR:	<=====================> LTA
-#								<=====> STA	
-#  Class_LR:	<=====================> LTA
-#				    				<=====> STA
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ bODY sCript (Do not ChAnge)
 
 Home=`dirname $(readlink -f "$0")`
-input="$Home/Input"	
+input="$Home/Input"
 VelModel="$Home/$VM_Name"	
+Inc="0.5"
 
 
 round ()
 {
-echo $(printf %.$2f $(echo "scale=$2;(((10^$2)*$1)+0.5)/(10^$2)" | bc))
+	echo $(printf %.$2f $(echo "scale=$2;(((10^$2)*$1)+0.5)/(10^$2)" | bc))
 }
 
 deg2rad ()
@@ -74,7 +65,7 @@ time2sec ()
 Absolute ()
 {
 	echo "scale=1; sqrt ($1 * $1)" | bc -l
-}	
+}
 
 distance ()
 {
@@ -83,120 +74,67 @@ distance ()
 	evela=`deg2rad $3`
 	evelo=`deg2rad $4`
 	lodif=`echo "$stlon - $evelo" | bc -l`
-	
+
 	DI=`echo "s ($evela) * s ($stlat) + c ($evela) * c ($stlat) * c ($lodif)" | bc -l`
 	aD=`echo "3.14159 / 2 - a ($DI / sqrt (1 - $DI * $DI ))" | bc -l` && deg_aD=`rad2deg $aD`
 	Dist=`echo "scale=2; $deg_aD * 60 * 1.15078 * 1.609344" | bc -l`
 	echo `round $Dist 2`
 }
 
-Data_Pre_Pro ()
+
+Picker ()
 {
-	python - <<- EOF
+	python - <<- END
 		import warnings
-		import glob
+		warnings.filterwarnings ('ignore')	
 
-		with warnings.catch_warnings ():	
-		    warnings.filterwarnings("ignore")
-		    from obspy import read, Trace, Stream, signal
-				
-		for data in glob.glob ('*$SAC'):
-		    st = read (data)	
-		    data = st[0].data
-		    stat = st[0].stats.station
-		    netw = st[0].stats.network
-		    chan = st[0].stats.channel
+		from obspy import read
+		from processing import sta_lta_div, normalization
+		import datetime
+		import numpy as np     
 
-		    st_filt = st.copy()		
-		    st_filt.filter ('highpass', freq=$F1_P, corners=3, zerophase=True)
-		    st_filt.filter ('lowpass', freq=$F2_P, corners=3, zerophase=True)
-		    st_filt.detrend ("spline", order=3, dspline=500)
-			
-		    envelope_points = signal.filter.envelope (st_filt[0].data)
+		st = read ('$data')
+		tr = st[0].copy()
+		stat = tr.stats.station
+		netw = tr.stats.network
+		chan = tr.stats.channel
+		npts = tr.stats.npts
+		start = tr.stats.starttime
+		s_rate = int (tr.stats.sampling_rate)
 
-		    out_trace = Stream ([Trace (data = envelope_points, header=st[0].stats)])
-		    output_name = f'envelope.{stat}.{netw}.{chan}.$SAC'
-		    out_trace.write (output_name, format="SAC", encoding=5)		
-		
-	EOF
+		tr.detrend ("spline", order=3, dspline=500)
+		tr.filter ('highpass', freq=$F1_P, corners=3, zerophase=True)
+		tr.filter ('lowpass', freq=$F2_P, corners=3, zerophase=True)
+
+		nsta = int ($STA_P * s_rate)
+		nlta = int ($LTA_P * s_rate)
+
+		tr_norm = normalization (tr)
+		max = sta_lta_div (tr_norm, nsta, nlta)
+		Psec = max / s_rate
+		Pdate_time = start + datetime.timedelta (seconds = Psec)
+		print (f'P phase arrival: {Pdate_time}')
+		tr.stats.sac.o = Psec
+		tr.write ('$data', format='SAC')		
+
+	END
 }
 
-GET_RMS_P ()
-{
-	CMD="r $data \n MTW $1 $2; RMS TO USER0 \n MTW $3 $4; RMS TO USER1 \n setbb RL &1,USER0 RS &1,USER1 \n getbb TO .tmp NAMES off RL RS \n q \n"
-	echo -e "$CMD" | sac 2> /dev/null 1>&2
-}
 
-Cleaner ()
-{
-	cd $input  
-	[[ `ls $input/*SAC 2> /dev/null` ]] && SAC="SAC" || SAC="sac"
-	ls -I "*$SAC" | xargs rm -f
-	rm envelope* 2> /dev/null
-}
-
-P_Picker_Body ()
-{
-	bgtm=`saclst B f $data | awk '{print $2}'` && bgtm=`printf "%0.f\n" $bgtm`
-	entm=`saclst E f $data | awk '{print $2}'` && entm=`printf "%0.f\n" $entm`
-	evtm=`saclst KZTIME f $data | awk '{print $2}'` 
-	stnm=`saclst KSTNM f $data | awk '{print $2}'` 
-
-	L1="$bgtm"
-	L2=`echo "$L1 + $LTA_P" | bc -l`
-
-	while (( `echo "$L2 <= ($entm * 2 / 3)" | bc -l` )); do	
-		if [[ "$Method" = "Class_RR" ]]; then
-			S1=`echo "$L2 - $STA_P" | bc -l`
-			S2="$L2"
-		elif [[ "$Method" = "Class_LR" ]]; then
-			S1=`echo "$L2 - ($STA_P / 3)" | bc -l`
-			S2=`echo "$L2 + ($STA_P * 2 / 3)" | bc -l`	
-		else
-			echo "Please select a proper method" && exit
-		fi		
-		
-		GET_RMS_P $L1 $L2 $S1 $S2
-		
-		RMS_L=`awk 'NR==1 {print $0}' .tmp` 
-		RMS_S=`awk 'NR==2 {print $0}' .tmp` 
-		C=`echo "scale=1; ($RMS_S / $RMS_L) >= $P_WTh" | bc -l`
-		
-		if [[ "$C" = "1" ]]; then
-			echo -e "RMS_S = $RMS_S RMS_L = $RMS_L `echo "scale=1; $RMS_S / $RMS_L" | bc -l`"
-			PSec=`echo "scale=1; ($S1 + $S2) / 2" | bc -l` 
-			Ptme=`date --date "$evtm UTC +$PSec sec" "+%H:%M:%S"`
-			echo -e "r $data \n ch a $PSec \n wh \n w over \n q \n" | sac 2> /dev/null 1>&2
-			echo "$data $PSec $Ptme $stnm" >> P_Arrivals.dat && break
-		fi	
-		cat /dev/null > .tmp
-		L1=`echo "$L1 + $Inc" | bc -l`
-		L2=`echo "$L2 + $Inc" | bc -l`		
-	done
-}
-
-P_Picker ()
+Cleaner () 
 {
 	cd $input
-	Data_Pre_Pro
-		
-	for data in `ls envelope*`; do
-		echo -e "# Working on\n$data (Picking P phase)"
-		cat /dev/null > .tmp
-		P_Picker_Body
-	done
+	[[ ! `ls *$data_f 2> /dev/null` ]] && echo "No seismic data found in input dir (check the input and data_f param!)" && exit
+	ls -I "*$data_f" -I "*py" -I "__*" 2> /dev/null | xargs rm -f
+}
 
-	Or_WTh="$P_WTh"
-	for data in `ls envelope*`; do
-		if [[ ! `grep $data P_Arrivals.dat 2> /dev/null` ]]; then
-			echo -e "# Reprocessing data:\n$data (Picking P phase)"
-			while [[ ! `grep $data P_Arrivals.dat 2> /dev/null` ]]; do
-				P_WTh=`echo "$P_WTh - $WTh_I" | bc -l` && (( `echo "$P_WTh < $Min_WTh_Th" | bc -l` )) && break
-				P_Picker_Body
-			done
-		fi
-		P_WTh="$Or_WTh"
-	done
+p_picker () 
+{
+	[[ ! `ls *$data_f 2> /dev/null` ]] && echo "no $data_f data available! check the input dir" && exit
+	for data in `ls *$data_f`; do
+		echo -e "# Processing data:\n$data (Picking P phase)"
+		Picker
+	done	
 }
 
 grid ()
@@ -248,9 +186,10 @@ map ()
 	cat $input/Epicenter.dat	
 }
 
+
 vel_Reader ()
 {
-	cat /dev/null > $Home/Velmodel.tvel
+	cat /dev/null > $Home/.Velmodel.tvel
 	sed -i '/^$/d' $VelModel
 	read -a DP <<< `awk 'NR > 1 {print $1}' $VelModel | tr '\n' ' '`
 	read -a VP <<< `awk 'NR > 1 {print $2}' $VelModel | tr '\n' ' '`
@@ -261,7 +200,7 @@ vel_Reader ()
 	for ((i=1; i<${#DP[@]}; i++)); do
 		[[ -z ${DP[$i]} ]] || [[ -z ${VP[$i]} ]] || [[ -z ${VS[$i]} ]] && echo "Incomplete Velocity model!" && exit
 		echo "${DP[$i]}  ${VP[$((i-1))]}   ${VS[$((i-1))]}   ${DN[$((i-1))]}" >> $Home/Velmodel.tvel
-		echo "${DP[$i]}  ${VP[$i]}   ${VS[$i]}   ${DN[$i]}" >> $Home/Velmodel.tvel
+		echo "${DP[$i]}  ${VP[$i]}   ${VS[$i]}   ${DN[$i]}" >> $Home/.Velmodel.tvel
 	done
 }
 
@@ -276,14 +215,19 @@ Regression ()
 		X = np.array ([$x])
 		Y = np.array ([$y])
 		slope, intercept, r, _, _ = stats.linregress(X, Y)
-		print (r**2)
+		print (r ** 2)
 	END
 }
 
 Real_Regression ()
 {
-	export Closest_Inf=`sort -k 3 $input/P_Arrivals.dat | head -1`
-	export SecondC_Inf=`sort -k 3 $input/P_Arrivals.dat | head -2 | tail -1`
+	[[ ! -s  P_Arrivals.dat ]] && "No arrival time info! check the input data" && exit
+	export Closest_Inf=`sort -k 3 P_Arrivals.dat | head -1`
+	export SecondC_Inf=`sort -k 3 P_Arrivals.dat | head -2 | tail -1`
+	export Third_Inf=`sort -k 3 P_Arrivals.dat | head -3 | tail -1`
+	export Third_Sta=`echo $Third_Inf | awk '{print $NF}'`
+	export Fourth_Inf=`sort -k 3 P_Arrivals.dat | head -4 | tail -1`
+	export Fourth_Sta=`echo $Fourth_Inf | awk '{print $NF}'`	
 	export Closest_Sta=`echo $Closest_Inf | awk '{print $NF}'`
 	export SecondC_Sta=`echo $SecondC_Inf | awk '{print $NF}'`
 	export Closest_Tme=`echo $Closest_Inf | awk '{print $3}'`
@@ -294,9 +238,11 @@ Real_Regression ()
 	export Closest_Lon=`grep -w "$Closest_Sta" $Home/stations.dat | awk '{print $3}'`
 	export SecondC_Lat=`grep -w "$SecondC_Sta" $Home/stations.dat | awk '{print $2}'`
 	export SecondC_Lon=`grep -w "$SecondC_Sta" $Home/stations.dat | awk '{print $3}'`
-	[[ -z "$Closest_Lat" ]] || [[ -z "$Closest_Lon" ]] && echo "No information found for The closest station!" && exit
-	[[ -z "$SecondC_Lat" ]] || [[ -z "$SecondC_Lon" ]] && echo "No information found for The second closest station!" && exit
-	cat $input/P_Arrivals.dat | sort -k 3 | while read info; do
+	[[ -z "$Closest_Lat" ]] || [[ -z "$Closest_Lon" ]] \
+		&& echo "No information found for The closest station < $Closest_Sta >!" && exit
+	[[ -z "$SecondC_Lat" ]] || [[ -z "$SecondC_Lon" ]] \
+		&& echo "No information found for The second closest station < $SecondC_Sta >!" && exit
+	cat P_Arrivals.dat | sort -k 3 | while read info; do
 		stname=`echo $info | awk '{print $NF}'`	
 		[[ "$stname" = "$Closest_Sta" ]] && continue
 		stlat=`grep -w "$stname" $Home/stations.dat | awk '{print $2}'`
@@ -311,9 +257,10 @@ Real_Regression ()
 	export Real_Slope=`Regression dist_time.dat`
 }
 
+
 Ttime ()
 {
-	python2 - <<- EOF
+	python - <<- EOF
 		from pyrocko import cake
 		import numpy as np
 		km = 1000.
@@ -323,9 +270,11 @@ Ttime ()
 		distance = np.array ([$1])* km * cake.m2d
 		Phase = cake.PhaseDef ('$phase')
 		for arrival in model.arrivals (distance, phases=Phase, zstart=source_depth):
-		    print '%13g %13g' % (arrival.x*cake.d2m/km, arrival.t)
+		    print('%8g' % (arrival.t))
+
 	EOF
-}    
+}
+
 
 Grid_Search ()
 {
@@ -337,12 +286,40 @@ Grid_Search ()
 		cat /dev/null > $Glon-$Glat.dat
 		cat /dev/null > dist_tmp
 		cat /dev/null > traveltimes.dat
-		
+
 		mindist=`distance $Closest_Lat $Closest_Lon $evela $evelo`
-		dislimt=`echo "scale=2; $mindist - ($Init_Grid_In / 2 * 113)" | bc -l`	# deg ~ 113 km
+		dislimt=`echo "scale=2; $mindist - ($Init_Grid_In * 1.42 * 115)" | bc -l`	# deg ~ 115 km
 		echo "Minimum allowed epicentral distance for the closest station is $dislimt." >> $Glon-$Glat.dat
+
+		cat stations.used | while read Sinfo; do
+			stnam=`echo $Sinfo | awk '{print $1}'` 
+			stlat=`echo $Sinfo | awk '{print $2}'` 
+			stlon=`echo $Sinfo | awk '{print $3}'` 
+			dist=`distance $stlat $stlon $evela $evelo`
+			#(( `echo "$dist < $dislimt" | bc -l` )) && echo "$stnam, $dist < $dislimt" >> $Glon-$Glat.dat && cat /dev/null > dist_tmp && break 
+			echo "$stnam $dist" >> dist_tmp
+		done 
+		[[ ! -s dist_tmp ]] && continue	
+
+		# Station order criteria
+		S0=`sort -n -k 2 dist_tmp | cut -f 1 -d " " | head -1`
+		S1=`sort -n -k 2 dist_tmp | cut -f 1 -d " " | head -2 | tail -1`
+		S2=`sort -n -k 2 dist_tmp | cut -f 1 -d " " | head -3 | tail -1`
+		S3=`sort -n -k 2 dist_tmp | cut -f 1 -d " " | head -4 | tail -1`
+		echo -e "closest stations:\n$S0 $S1 $S2 $S3" >> $Glon-$Glat.dat
+		echo -e "actual closest stations:\n$Closest_Sta" "$SecondC_Sta" "$Third_Sta" "$Fourth_Sta" >> $Glon-$Glat.dat
+
+		list1=("$Closest_Sta" "$SecondC_Sta" "$Third_Sta" "$Fourth_Sta")
+		list2=("$S0" "$S1" "$S2" "$S3")
+		j=0
+		for i in 0 1 2 3; do
+			[[ ${list1[$i]} != ${list2[$i]} ]] && j=$((j+1))
+		done	
+		echo "j = $j" >> $Glon-$Glat.dat
+		[[ $j -gt 2 ]] \
+			&& echo "Grid point is far from the expected location, Skipping ..." >> $Glon-$Glat.dat && continue
 		
-		# Condition 1 (time difference)
+		# time difference criteria
 		timedif=`grep -w "$Closest_Sta $SecondC_Sta" dist_time.dat | cut -f 4 -d " "`
 		t1=`echo "$timedif - $S12_TD" | bc -l`
 		t2=`echo "$timedif + $S12_TD" | bc -l`
@@ -351,16 +328,16 @@ Grid_Search ()
 		dist1="$mindist"
 		dist2=`distance $SecondC_Lat $SecondC_Lon $evela $evelo`
 		(( `echo "$dist1 < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
-		T1=`Ttime $dist1  2> /dev/null` && T1=`echo $T1 | awk '{print $2}'`	
+		T1=`Ttime $dist1 2> /dev/null` && T1=`echo $T1 | awk '{print $1}'`
 		if [[ -z "$T1" ]]; then 
 			[[ "$phase" = "p" ]] && phase="P" || phase="p"
-			T1=`Ttime $dist1 2> /dev/null` && T1=`echo $T1 | awk '{print $2}'`	
+			T1=`Ttime $dist1 2> /dev/null` && T1=`echo $T1 | awk '{print $1}'`
 		fi
 		(( `echo "$dist2 < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
-		T2=`Ttime $dist2 2> /dev/null` && T2=`echo $T2 | awk '{print $2}'`	
+		T2=`Ttime $dist2 2> /dev/null` && T2=`echo $T2 | awk '{print $1}'`
 		if [[ -z "$T2" ]]; then 
 			[[ "$phase" = "p" ]] && phase="P" || phase="p"
-			T2=`Ttime $dist2 2> /dev/null` && T2=`echo $T2 | awk '{print $2}'`	
+			T2=`Ttime $dist2 2> /dev/null` && T2=`echo $T2 | awk '{print $1}'`
 		fi		
 		if [[ -n "$T1" ]] && [[ -n "$T2" ]]; then
 			DF=`echo "$T2 - $T1" | bc -l`
@@ -370,30 +347,20 @@ Grid_Search ()
 			echo "insufficient travel time info for the closest stations, skipping the grid point .." >> $Glon-$Glat.dat && continue	
 		fi
 		
-		cat stations.used | while read Sinfo; do
-			stnam=`echo $Sinfo | awk '{print $1}'` 
-			stlat=`echo $Sinfo | awk '{print $2}'` 
-			stlon=`echo $Sinfo | awk '{print $3}'` 
-			dist=`distance $stlat $stlon $evela $evelo`
-			(( `echo "$dist < $dislimt" | bc -l` )) && echo "$stnam, $dist < $dislimt" >> $Glon-$Glat.dat && cat /dev/null > dist_tmp && break 
-			echo "$stnam $dist" >> dist_tmp
-		done 
-		[[ ! -s dist_tmp ]] && continue
-		
 		i=0
 		cat stations.used | while read Sinfo; do
 			stnam=`echo $Sinfo | awk '{print $1}'`	
 			dist=`grep -w "$stnam" dist_tmp | cut -f 2 -d " "` 
 			(( `echo "$dist < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
-			TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`	
-			if [[ -z "$TTm" ]]; then 
+			TT=`Ttime $dist 2> /dev/null` && TT=`echo $TT | awk '{print $1}'`
+			if [[ -z "$TT" ]]; then 
 				[[ "$phase" = "p" ]] && phase="P" || phase="p"
-				TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`	 
+				TT=`Ttime $dist 2> /dev/null` && TT=`echo $TT | awk '{print $1}'`
 			fi
-			[[ -z $TTm ]] && i+=1
+			[[ -z $TT ]] && i+=1
 			[[ $i -eq 2 ]] && echo "Two failures in travel time calculation. ignoring the grid." && break 2
-			echo "distance to $stnam = $dist km, P_ttime = $TTm" >> $Glon-$Glat.dat
-			echo "$stnam $TTm" >> traveltimes.dat
+			echo "distance to $stnam = $dist km, P_ttime = $TT" >> $Glon-$Glat.dat
+			echo "$stnam $TT" >> traveltimes.dat
 		done 		
 		[[ ! -s traveltimes.dat ]] && echo "No synthetic travel-time calculated for grid point: $evela, $evelo. Skipped ..." && continue
 
@@ -463,14 +430,14 @@ Depth_BT ()
 			stlon=`echo $Sinfo | awk '{print $3}'` 				
 			dist=`distance $stlat $stlon $evela $evelo` 
 			(( `echo "$dist < $PnPg_Th" | bc -l` )) && phase="p" || phase="P"
-			TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`
-			if [[ -z "$TTm" ]]; then 
+			TT=`Ttime $dist 2> /dev/null` && TT=`echo $TT | awk '{print $1}'`
+			if [[ -z "$TT" ]]; then 
 				[[ "$phase" = "p" ]] && phase="P" || phase="p"
-				TT=`Ttime $dist 2> /dev/null` && TTm=`echo $TT | awk '{print $2}'`
+				TT=`Ttime $dist 2> /dev/null` && TT=`echo $TT | awk '{print $1}'`
 			fi
-			[[ -z $TTm ]] && j+=1
+			[[ -z $TT ]] && j+=1
 			[[ $j -eq 2 ]] && echo "Two failures in travel time calculation. ignoring the Depth: $Dep." && break 2	
-			echo "$stnam $TTm" 
+			echo "$stnam $TT" 
 		done > traveltimes.dat	
 		[[ ! -s traveltimes.dat ]] && echo "No synthetic travel-time calculated for Depth = $Dep. Skipped ..." && continue
 
@@ -494,26 +461,66 @@ Depth_BT ()
 
 }
 
+[[ ! -d $Home/backup ]] && mkdir $Home/backup || rm -rf $Home/backup/*
+cp $input/*$data_f $Home/backup 2> /dev/null
 
-Cleaner
-[[ ! `ls $input/*$SAC 2> /dev/null` ]] && echo "No seismic data found in input dir" && exit
+while getopts ":plhv" options; do
+	case "${options}" in
+		p)
+			Cleaner
+			p_picker 
+			notify-send 'Code Completion' '\t\t Phase picking has been done!' 
+			;;
+		v)
+			echo "Version 1.2.1" 
+			;;
+		h)
+			message='''Usage:\n
+				-p ) only execute the picking process\n
+				-l ) run both picking and locating processes\n
+				-v ) print version\n
+				-h ) print this message'''	
+			echo -e $message	
+			;;
+		l)
+			Cleaner
 
-if [[ "$AutoPick" = "True" ]] || [[ "$AutoPick" = "true" ]]; then
-	P_Picker
-else
-	cd $input
-	for data in `ls *$SAC`; do
-		PSec=`saclst A f $data | awk '{print $2}'` 
-		(( `echo "$PSec == -12345" | bc -l` )) && continue
-		evtm=`saclst KZTIME f $data | awk '{print $2}'` 
-		stnm=`saclst KSTNM f $data | awk '{print $2}'` 		
-		Ptme=`date --date "$evtm UTC +$PSec sec" "+%H:%M:%S"`
-		echo "$data $PSec $Ptme $stnm" >> P_Arrivals.dat
-	done
-fi
+			if [[ "$AutoPick" = "True" ]] || [[ "$AutoPick" = "true" ]]; then
+				P_Picker
+				for data in `ls *$data_f`; do
+					PSec=`saclst A f $data | awk '{print $2}'` 
+					(( `echo "$PSec == -12345" | bc -l` )) && continue
+					evtm=`saclst KZTIME f $data | awk '{print $2}'` 
+					stnm=`saclst KSTNM f $data | awk '{print $2}'` 		
+					Ptme=`date --date "$evtm UTC +$PSec sec" "+%H:%M:%S"`
+					echo "$data $PSec $Ptme $stnm" >> P_Arrivals.dat
+				done				
+			else
+				for data in `ls *$data_f`; do
+					PSec=`saclst o f $data | awk '{print $2}'` 
+					(( `echo "$PSec == -12345" | bc -l` )) && continue
+					evtm=`saclst KZTIME f $data | awk '{print $2}'` 
+					stnm=`saclst KSTNM f $data | awk '{print $2}'` 		
+					Ptme=`date --date "$evtm UTC +$PSec sec" "+%H:%M:%S"`
+					echo "$data $PSec $Ptme $stnm" >> P_Arrivals.dat
+				done
+				[[ ! -s P_Arrivals.dat ]] && \
+					echo 'No P arrivals has been set in sac data. run "bash Locator -p"' && exit
+			fi
 
-vel_Reader
-Real_Regression
-TT_Calculator
-[[ "$Dept_Prob" = "True" ]] || [[ "$Dept_Prob" = "true" ]] && Depth_BT
-map
+			vel_Reader
+			Real_Regression
+			TT_Calculator
+			[[ "$Dept_Prob" = "True" ]] || [[ "$Dept_Prob" = "true" ]] && Depth_BT
+			map
+			notify-send 'Code Completion' '\t\tCode execution has been done!' 
+			;;
+		*)
+			echo "invalid argument; use -h flag to see instruction" && exit 
+			;;
+			
+	esac
+done
+
+
+[[ "$OPTIND" -eq 1 ]] && echo "needs an argument; use -h flag to see instruction" && shift $((OPTIND -1)) && exit
