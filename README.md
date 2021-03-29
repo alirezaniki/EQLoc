@@ -23,7 +23,7 @@ Note:
 
 At your first test, run "bash Locate -h" to get instructed.
 
-Supply the Input/ directory with vertical components of different stations. Data must be in SAC format containing at least "$LTA_P" seconds of noise length before P arrival.
+Supply the Input/ directory with vertical components of different stations. Data must be in SAC format containing at least "LTA_P" seconds of noise length before P arrival.
 
 Two files are required in advance; (1) station info file (see the example file stations.dat; do not change the file name), and (2) velocity model (see the example file; set the file name to VM_Name parameter). 
 
